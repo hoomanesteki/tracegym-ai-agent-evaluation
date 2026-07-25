@@ -1,0 +1,13 @@
+# Reference prices in USD per 1M tokens, keyed by "provider/model".
+# Actual free-tier spend is $0; these turn token counts into a counterfactual
+# cost_usd per span so the gate can catch a cost regression (for example a model
+# swap that triples price) even when nothing was actually billed.
+# Approximate public list prices as of 2026-07; re-verify before quoting them.
+prices:
+  "groq/llama-3.1-8b-instant":     { input: 0.05, output: 0.08 }
+  "groq/llama-3.3-70b-versatile":  { input: 0.59, output: 0.79 }
+  "gemini/gemini-2.5-flash":       { input: 0.30, output: 2.50 }
+  "gemini/gemini-2.5-flash-lite":  { input: 0.10, output: 0.40 }
+
+# Used when a span's model is not in the table above.
+default: { input: 0.10, output: 0.30 }

@@ -216,3 +216,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Editor / OS / local tooling
+.claude/
+.DS_Store
+*.swp
+
+# TraceGym local artifacts
+.cache/
+runs/
+*.local.db
+.quarto/
+docs/site/_site/
+node_modules/

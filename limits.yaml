@@ -1,0 +1,27 @@
+# Observed free-tier rate limits, per provider and model.
+# Providers stopped publishing static free-tier tables, so we measure instead of
+# assume. These values are seeded from documented limits (2026-07); refresh with
+#   python scripts/probe_limits.py
+# Every scheduler reads this file and throttles to 80% of the observed numbers.
+groq:
+  llama-3.1-8b-instant:
+    rpm_observed: 30
+    rpd_observed: 14400
+    tpd_observed: 500000
+    probed_at: "2026-07-25 (seed)"
+  llama-3.3-70b-versatile:
+    rpm_observed: 30
+    rpd_observed: 1000
+    tpd_observed: 100000
+    probed_at: "2026-07-25 (seed)"
+gemini:
+  gemini-2.5-flash:
+    rpm_observed: 10
+    rpd_observed: 250
+    tpm_observed: 250000
+    probed_at: "2026-07-25 (seed)"
+  gemini-2.5-flash-lite:
+    rpm_observed: 15
+    rpd_observed: 1000
+    tpm_observed: 250000
+    probed_at: "2026-07-25 (seed)"
