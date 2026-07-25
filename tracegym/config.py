@@ -30,6 +30,15 @@ class GateConfig:
 
 
 @dataclass(frozen=True)
+class AdvisorConfig:
+    budget_cap_usd: float = 5.0
+    budget_window_days: int = 7
+    bootstrap_seed: int = 1729
+    top_k: int = 10
+    latency_cap_ms: float = 8000.0
+
+
+@dataclass(frozen=True)
 class Config:
     schema_version: int = 1
     semconv_genai_version: str = "1.42.0"
@@ -39,6 +48,7 @@ class Config:
     judge_pass_threshold: float = 0.6
     judge_max_retries: int = 2
     gate: GateConfig = field(default_factory=GateConfig)
+    advisor: AdvisorConfig = field(default_factory=AdvisorConfig)
     paths: dict[str, str] = field(default_factory=dict)
     root: Path = field(default_factory=Path.cwd)
 
@@ -69,6 +79,14 @@ def load_config(path: str | Path = "tracegym.yaml") -> Config:
         cost_regression_pct=g.get("cost_regression_pct", 50.0),
         block_on_l1_invariant_regression=g.get("block_on_l1_invariant_regression", True),
     )
+    a = raw.get("advisor", {})
+    advisor = AdvisorConfig(
+        budget_cap_usd=a.get("budget_cap_usd", 5.0),
+        budget_window_days=a.get("budget_window_days", 7),
+        bootstrap_seed=a.get("bootstrap_seed", 1729),
+        top_k=a.get("top_k", 10),
+        latency_cap_ms=a.get("latency_cap_ms", 8000.0),
+    )
     return Config(
         schema_version=raw.get("schema_version", 1),
         semconv_genai_version=otel.get("semconv_genai_version", "1.42.0"),
@@ -78,6 +96,7 @@ def load_config(path: str | Path = "tracegym.yaml") -> Config:
         judge_pass_threshold=j.get("pass_threshold", 0.6),
         judge_max_retries=j.get("max_retries", 2),
         gate=gate,
+        advisor=advisor,
         paths=raw.get("paths", {}),
         root=root,
     )

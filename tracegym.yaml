@@ -35,6 +35,14 @@ gate:
   cost_regression_pct: 50     # also block if per-run cost rises beyond this percent
   block_on_l1_invariant_regression: true  # any new deterministic-invariant failure blocks
 
+advisor:
+  # The cost/speed advisor watches these and proposes validated cheaper configs.
+  budget_cap_usd: 5.00       # counterfactual spend cap for the burn-down tracker
+  budget_window_days: 7
+  bootstrap_seed: 1729       # fixes the validation bootstrap so verdicts reproduce
+  top_k: 10                  # how many hot-spot cases to surface
+  latency_cap_ms: 8000       # cases slower than this are flagged as outliers
+
 paths:
   db: "runs/traces.db"
   blobs: "runs/blobs"
