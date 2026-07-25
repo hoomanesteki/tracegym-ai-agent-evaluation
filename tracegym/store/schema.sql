@@ -107,6 +107,8 @@ CREATE TABLE IF NOT EXISTS results (
     l1_results           TEXT,              -- JSON list of CheckResult
     l1_invariant_fail    INTEGER NOT NULL DEFAULT 0,
     judge_pass           INTEGER,           -- 0/1/NULL
+    judge_confidence     REAL,              -- ensemble agreement in [0,1], NULL if unjudged
+    judge_state          TEXT,              -- PASS | FAIL | NEEDS_REVIEW | NULL
     score                REAL NOT NULL DEFAULT 0,
     cost_usd             REAL NOT NULL DEFAULT 0,
     latency_ms           REAL NOT NULL DEFAULT 0,
