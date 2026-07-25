@@ -1,45 +1,46 @@
 ---
-title: "TraceGym"
 pagetitle: "TraceGym — deterministic, keyless agent evaluation"
+page-layout: full
+toc: false
 ---
 
-[**$0 · zero API keys · OpenTelemetry-native**]{.hero-tag}
+::: {.landing-hero}
+# TraceGym
 
-::: {.lead}
+::: {.tag}
+Record → replay → score → gate.
+:::
+
+::: {.sub}
 Agent demos are easy. Agent regressions are silent. TraceGym records an agent
 once, replays it deterministically with no API keys, scores it with layered
 deterministic checks and a calibrated LLM-judge ensemble, and blocks regressions
 in CI before they merge.
 :::
 
-## The numbers
+::: {.hero-badges}
+$0 · zero API keys · OpenTelemetry-native
+:::
 
-Measured by the demo, not asserted.
+[Try the demo](#try-it){.btn .btn-primary .btn-lg}
+[View the live report](report.html){.btn .btn-outline-primary .btn-lg}
+[GitHub](https://github.com/hoomanesteki/tracegym-ai-agent-evaluation){.btn .btn-outline-primary .btn-lg}
+:::
 
 ::: {.metric-grid}
 ::: {.metric}
 [100%]{.metric-value}[Replay determinism]{.metric-label}
 :::
 ::: {.metric}
-[10 / 10]{.metric-value}[Seeded regressions caught]{.metric-label}
+[10 / 10]{.metric-value}[Regressions caught]{.metric-label}
 :::
 ::: {.metric}
 [32]{.metric-value}[Golden cases]{.metric-label}
 :::
 ::: {.metric}
-[$0.00]{.metric-value}[Spend to build and run]{.metric-label}
+[$0.00]{.metric-value}[Spend to run]{.metric-label}
 :::
 :::
-
-## One command
-
-```bash
-uvx --from git+https://github.com/hoomanesteki/tracegym-ai-agent-evaluation tracegym demo
-```
-
-It builds a self-contained workspace, replays the suites offline, blocks the
-seeded regressions, and opens the [report](report.html). Nothing leaves your
-machine.
 
 ## The pipeline
 
@@ -64,4 +65,16 @@ flowchart LR
 [cost budgets]{.pill} [latency budgets]{.pill} [PII safety]{.pill}
 
 An agent is benchmarked against a reference: a prior version, an alternate model,
-or a deterministic domain solver. See [How it works](how-it-works.qmd).
+or a deterministic domain solver. See [How it works](how-it-works.qmd) and the
+[calibration](calibration.qmd) protocol.
+
+## Try it {#try-it}
+
+One command, no keys, nothing leaves your machine:
+
+```bash
+uvx --from git+https://github.com/hoomanesteki/tracegym-ai-agent-evaluation tracegym demo
+```
+
+It builds a self-contained workspace, replays the suites offline, blocks the
+seeded regressions, and opens the [report](report.html).
