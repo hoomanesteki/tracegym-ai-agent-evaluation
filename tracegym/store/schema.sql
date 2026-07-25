@@ -6,8 +6,10 @@
 -- storage automatically, and gives every artifact a stable identity for caching.
 --
 -- All statements are idempotent so connect() can apply this file every time.
-
-PRAGMA foreign_keys = ON;
+--
+-- Foreign keys are declared to document the relationships but left unenforced
+-- (SQLite's default). Capture streams spans as the agent runs and finalizes the
+-- parent trace row at the end, so rows are legitimately written child-first.
 
 -- A single recording session: point an agent at the proxy, run it, get a session.
 CREATE TABLE IF NOT EXISTS sessions (

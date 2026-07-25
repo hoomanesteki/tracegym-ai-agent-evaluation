@@ -13,9 +13,14 @@ from importlib.resources import files
 _SCHEMA = files("tracegym.store").joinpath("schema.sql").read_text(encoding="utf-8")
 
 
-def connect(path: str = ":memory:") -> sqlite3.Connection:
-    """Open ``path`` (or an in-memory DB), apply the schema, and return the connection."""
-    conn = sqlite3.connect(path)
+def connect(path: str = ":memory:", *, check_same_thread: bool = True) -> sqlite3.Connection:
+    """Open ``path`` (or an in-memory DB), apply the schema, and return the connection.
+
+    ``check_same_thread=False`` is used by the capture proxy, whose async request
+    handlers run in a worker thread; it stays a single-worker server so the
+    connection is never touched concurrently.
+    """
+    conn = sqlite3.connect(path, check_same_thread=check_same_thread)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
     conn.commit()
