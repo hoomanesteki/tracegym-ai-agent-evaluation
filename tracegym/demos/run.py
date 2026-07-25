@@ -84,6 +84,20 @@ def run_demo(workspace: str | Path) -> dict:
         scorecards = {sid: suite_scorecard(conn, suites[sid]["baseline_run"]) for sid in suites}
         calibration = calibrate_from_db(conn, labeler="canary-gold", min_labels=1)
 
+        # Per-case drill-down and the regression gallery: the actual data behind
+        # the headline numbers.
+        from tracegym.inspection import case_detail, regression_examples
+
+        case_details = {
+            sid: [
+                d
+                for c in suites[sid]["cases"]
+                if (d := case_detail(conn, blob_root, suites[sid]["baseline_run"], c["id"], c))
+            ]
+            for sid in suites
+        }
+        regression_gallery = regression_examples(conn, blob_root, agent_suites)
+
         sql_baseline = suites["sql-analyst"]["baseline_run"]
         profile = build_profile(conn, sql_baseline)
         recommendations = [r.__dict__ for r in advise(conn, sql_baseline, roster=DEMO_ROSTER)]
@@ -126,6 +140,8 @@ def run_demo(workspace: str | Path) -> dict:
         "recommendations": recommendations,
         "determinism": determinism,
         "needs_review": needs_review,
+        "case_details": case_details,
+        "regression_gallery": regression_gallery,
         "gate_demo": {
             "bug": bug["id"],
             "verdict": gate_demo.verdict,

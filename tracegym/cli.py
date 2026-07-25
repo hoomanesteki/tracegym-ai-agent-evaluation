@@ -212,6 +212,109 @@ def calibrate(workspace: Path = typer.Option(DEMO_DIR)) -> None:
 
 
 @app.command()
+def cases(
+    workspace: Path = typer.Option(DEMO_DIR),
+    suite: str = typer.Option("sql-analyst"),
+) -> None:
+    """List a suite's cases with score, judge state, and invariant failures."""
+    from tracegym.inspection import list_cases
+
+    conn, baselines = _with_workspace(workspace)
+    rows = list_cases(conn, baselines[suite])
+    table = Table("case", "score", "judge", "invariant fails")
+    for r in rows:
+        table.add_row(
+            r["case_id"], str(r["score"]), r["judge_state"] or "-", str(r["invariant_fail"])
+        )
+    console.print(table)
+
+
+@app.command()
+def show(
+    case_id: str = typer.Argument(..., help="Case id, e.g. sql-001 or sr-003."),
+    workspace: Path = typer.Option(DEMO_DIR),
+    suite: str = typer.Option("sql-analyst"),
+) -> None:
+    """Show one case in full: input, output, every check, judge, and trace."""
+    from tracegym.inspection import case_detail
+    from tracegym.replay.loader import load_suite
+    from tracegym.report.render import render_output
+
+    conn, baselines = _with_workspace(workspace)
+    suite_cases, _ = load_suite(Path("suites") / suite)
+    case = next((c for c in suite_cases if c["id"] == case_id), None)
+    d = case_detail(conn, Path("blobs"), baselines[suite], case_id, case)
+    if d is None:
+        console.print(f"No case '{case_id}' in suite '{suite}'.")
+        raise typer.Exit(1)
+
+    console.print(
+        Panel(
+            f"[bold]{case_id}[/bold]  score={d['score']}  {d['judge']['state'] or ''}", title="case"
+        )
+    )
+    console.print(f"[dim]input[/dim] {d['input']}")
+    console.print("[dim]output[/dim]")
+    console.print(render_output(d["output"]))
+    console.print("[dim]checks[/dim]")
+    for ch in d["checks"]:
+        mark = "[green]PASS[/green]" if ch["passed"] else "[red]FAIL[/red]"
+        console.print(f"  {mark} {ch['name']}: {ch['detail']}")
+    if d["judge"]["rationale"]:
+        console.print(
+            f"[dim]judge[/dim] {d['judge']['state']} ({d['judge']['confidence']}) {d['judge']['rationale']}"
+        )
+    console.print("[dim]trace[/dim]")
+    for s in d["spans"]:
+        console.print(
+            f"  {s['kind']}:{s['name']}  {s['input_tokens']}+{s['output_tokens']} tok  "
+            f"{s['latency_ms']}ms  ${s['cost_usd']:.6f}"
+        )
+
+
+@app.command()
+def diff(
+    bug: str = typer.Argument("sql_delete", help="Seeded bug id (see tracegym/demos/bugs.py)."),
+    workspace: Path = typer.Option(DEMO_DIR),
+) -> None:
+    """Show a seeded bug: baseline vs buggy output and the check that caught it."""
+    from tracegym.demos.bugs import BUGS
+    from tracegym.inspection import regression_examples
+    from tracegym.replay.loader import load_suite
+    from tracegym.report.render import render_output
+
+    conn, baselines = _with_workspace(workspace)
+    suites = {}
+    for sid in ("support-rag", "sql-analyst"):
+        cs, _ = load_suite(Path("suites") / sid)
+        suites[sid] = {"cases": cs, "baseline_run": baselines[sid]}
+    gallery = regression_examples(conn, Path("blobs"), suites)
+    g = next((x for x in gallery if x["id"] == bug), None)
+    if g is None:
+        console.print(f"Unknown bug '{bug}'. Options: {', '.join(b['id'] for b in BUGS)}")
+        raise typer.Exit(1)
+
+    color = "green" if g["caught"] else "red"
+    console.print(
+        Panel(
+            f"{g['desc']} ({g['suite']})",
+            title=f"[{color}]{'CAUGHT' if g['caught'] else 'MISSED'}[/{color}] {bug}",
+            border_style=color,
+        )
+    )
+    ex = g.get("example")
+    if ex:
+        console.print(f"[dim]case {ex['case_id']}[/dim]")
+        console.print("[green]baseline output[/green]")
+        console.print(render_output(ex["baseline_output"]))
+        console.print("[red]buggy output[/red]")
+        console.print(render_output(ex["buggy_output"]))
+        caught = ", ".join(f"[red]{c['name']}[/red]" for c in ex["failing_checks"])
+        console.print(f"[dim]caught by[/dim] {caught}")
+        console.print(f"  {ex['failing_checks'][0]['detail']}")
+
+
+@app.command()
 def record(
     proxy: bool = typer.Option(False, "--proxy", help="Start the OpenAI-compatible capture proxy."),
     port: int = typer.Option(8080),

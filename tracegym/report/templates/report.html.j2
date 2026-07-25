@@ -60,6 +60,26 @@
     border:1px solid var(--line); border-radius:10px; overflow:hidden; width:max-content; }
   .confusion div { background:var(--panel); padding:8px 16px; font-size:13px; text-align:center; }
   .confusion .hd { color:var(--muted); font-weight:600; }
+  .gallery-item { border:1px solid var(--line); border-radius:14px; padding:16px 18px; margin-bottom:12px; background:var(--panel); }
+  .diff { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px; }
+  @media (max-width:640px){ .diff { grid-template-columns:1fr; } }
+  .diff .col { border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .diff .col.bad { border-color:color-mix(in srgb,var(--bad) 45%,var(--line)); }
+  .diff h4 { margin:0 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .diff pre { margin:0; white-space:pre-wrap; word-break:break-word; font-family:ui-monospace,Menlo,monospace; font-size:12px; }
+  .caught-by { margin-top:10px; font-size:13px; }
+  .caught-by .c { color:var(--bad); font-weight:650; }
+  details.case { border:1px solid var(--line); border-radius:12px; padding:0 16px; margin-bottom:8px; background:var(--panel); }
+  details.case > summary { cursor:pointer; padding:12px 0; font-size:14px; display:flex; justify-content:space-between; gap:10px; list-style:none; }
+  details.case > summary::-webkit-details-marker { display:none; }
+  details.case[open] > summary { border-bottom:1px solid var(--line); }
+  .case-body { padding:12px 0; font-size:13px; }
+  .case-body pre { background:color-mix(in srgb,var(--ink) 6%,transparent); border-radius:8px; padding:10px 12px; white-space:pre-wrap; word-break:break-word; font-size:12.5px; margin:6px 0; }
+  .ck { display:flex; align-items:center; gap:8px; font-size:13px; margin:3px 0; }
+  .dot { width:8px; height:8px; border-radius:50%; flex:none; }
+  .dot.ok { background:var(--good); } .dot.no { background:var(--bad); }
+  .span-row { font-size:12px; color:var(--muted); font-family:ui-monospace,Menlo,monospace; }
+  .k { color:var(--muted); font-size:12px; }
 </style>
 </head>
 <body>
@@ -92,6 +112,32 @@
       {% if gate.reasons %}<div class="note">Blocked because: {{ gate.reasons | join('; ') }}.</div>{% endif %}
     </div>
   </section>
+
+  {% if gallery %}
+  <section>
+    <h2>Seeded regressions &middot; the evidence</h2>
+    <div class="note" style="margin:-6px 0 14px">Each bug is applied to the baseline agent and replayed from the same fixtures. Here is one concrete example per bug and the exact check that caught it.</div>
+    {% for g in gallery %}
+    <div class="gallery-item">
+      <div class="row">
+        <div><strong class="mono">{{ g.id }}</strong> &middot; {{ g.desc }} <span class="k">({{ g.suite }})</span></div>
+        <span class="chip {{ 'good' if g.caught else 'bad' }}">{{ 'CAUGHT' if g.caught else 'MISSED' }}</span>
+      </div>
+      {% if g.example %}
+      <div class="k" style="margin-top:8px">case {{ g.example.case_id }}{% if g.example.question %} &middot; "{{ g.example.question }}"{% endif %}</div>
+      <div class="diff">
+        <div class="col"><h4>baseline output</h4><pre>{{ g.example.baseline_output }}</pre></div>
+        <div class="col bad"><h4>buggy output</h4><pre>{{ g.example.buggy_output }}</pre></div>
+      </div>
+      <div class="caught-by">caught by
+        {% for c in g.example.failing_checks %}<span class="c">{{ c.name }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+        &mdash; {{ g.example.failing_checks[0].detail }}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
 
   <section>
     <h2>Agent scorecard</h2>
@@ -176,6 +222,45 @@
       <div class="note">This demo calibrates against {{ calibration.n }} deterministic canary golds, an illustrative drift check. A real Cohen's &kappa; requires human labels against a live cross-family judge: run <code>tg label</code> then <code>tg calibrate</code>. The ladder degrades the judge to advisory below &kappa; = 0.55 rather than fake a number.</div>
     </div>
   </section>
+
+  {% if case_details %}
+  <section>
+    <h2>Case detail &middot; walk every case</h2>
+    <div class="note" style="margin:-6px 0 14px">The actual input, the agent's actual output, every check with its detail, the judge, and the trace. Click a case to expand.</div>
+    {% for suite, cases in case_details.items() %}
+    <h3 style="font-size:14px; margin:18px 0 8px; color:var(--muted)">{{ suite }} ({{ cases|length }})</h3>
+    {% for c in cases %}
+    <details class="case">
+      <summary>
+        <span class="mono">{{ c.case_id }}</span>
+        <span>
+          <span class="k">score {{ c.score }}</span>
+          <span class="chip {{ 'good' if c.score >= 1.0 else ('bad' if c.invariant_fail else 'INCONCLUSIVE') }}">{{ c.judge.state or ('PASS' if c.score >= 1.0 else 'CHECK') }}</span>
+        </span>
+      </summary>
+      <div class="case-body">
+        <div class="k">question / input</div>
+        <div>{{ c.question }}</div>
+        <div class="k" style="margin-top:8px">agent output</div>
+        <pre>{{ c.output }}</pre>
+        <div class="k">checks</div>
+        {% for ch in c.checks %}
+        <div class="ck"><span class="dot {{ 'ok' if ch.passed else 'no' }}"></span><span class="mono">{{ ch.name }}</span><span class="k">{{ ch.detail }}</span></div>
+        {% endfor %}
+        {% if c.judge.rationale %}
+        <div class="k" style="margin-top:8px">judge</div>
+        <div>{{ c.judge.state }} &middot; confidence {{ c.judge.confidence }} &middot; {{ c.judge.rationale }}</div>
+        {% endif %}
+        <div class="k" style="margin-top:8px">trace</div>
+        {% for s in c.spans %}
+        <div class="span-row">{{ s.kind }}:{{ s.name }} &middot; {{ s.input_tokens }}+{{ s.output_tokens }} tok &middot; {{ s.latency_ms }}ms &middot; ${{ '%.6f'|format(s.cost_usd) }}</div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
+    {% endfor %}
+  </section>
+  {% endif %}
 
   <footer>
     TraceGym &middot; deterministic, keyless agent evaluation. Numbers above are measured from this run, not asserted.

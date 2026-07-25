@@ -118,6 +118,19 @@ gate catches **10 of 10**. The list lives in
 [tracegym/demos/bugs.py](tracegym/demos/bugs.py), in git history, which is the
 answer to "you cherry-picked the bugs".
 
+## See the actual data
+
+The report is not just numbers. It has a **regression gallery** (baseline vs
+buggy output and the exact check that caught each bug) and a **per-case
+drill-down** (the input, the agent's real output, every check with its detail, the
+judge, and the trace). The same data is on the CLI:
+
+```bash
+tg cases                 # every case with score, judge state, invariant fails
+tg show sql-001          # one case in full: input, SQL, checks, judge, trace
+tg diff sql_delete       # a seeded bug: baseline vs buggy + the check that caught it
+```
+
 ## What it doesn't do (yet)
 
 - The judge scores text only. Rewards are execution and deterministic checks; the

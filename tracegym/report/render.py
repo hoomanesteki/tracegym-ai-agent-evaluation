@@ -8,6 +8,7 @@ fetched at view time.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
@@ -39,6 +40,51 @@ def _scorecard_rows(scorecards: dict) -> list[dict]:
             }
         )
     return rows
+
+
+def render_output(obj) -> str:
+    """Readable form of an agent output: raw SQL, or answer + citations, or JSON."""
+    if isinstance(obj, dict):
+        if isinstance(obj.get("sql"), str):
+            return obj["sql"]
+        if isinstance(obj.get("answer"), str):
+            cites = obj.get("citations")
+            tail = f"\n\ncitations: {cites}" if cites else ""
+            return obj["answer"] + tail
+    return json.dumps(obj, indent=2, ensure_ascii=False)
+
+
+def _case_view(d: dict) -> dict:
+    question = (d.get("input") or {}).get("question") if isinstance(d.get("input"), dict) else None
+    return {
+        "case_id": d["case_id"],
+        "question": question or json.dumps(d.get("input"), ensure_ascii=False),
+        "output": render_output(d["output"]),
+        "checks": d["checks"],
+        "judge": d["judge"],
+        "score": d["score"],
+        "cost_usd": d["cost_usd"],
+        "latency_ms": d["latency_ms"],
+        "spans": d["spans"],
+        "invariant_fail": d["invariant_fail"],
+    }
+
+
+def _gallery_view(g: dict) -> dict:
+    ex = g.get("example")
+    view = {"id": g["id"], "suite": g["suite"], "desc": g["desc"], "caught": g["caught"]}
+    if ex:
+        question = (
+            (ex.get("input") or {}).get("question") if isinstance(ex.get("input"), dict) else None
+        )
+        view["example"] = {
+            "case_id": ex["case_id"],
+            "question": question or "",
+            "baseline_output": render_output(ex["baseline_output"]),
+            "buggy_output": render_output(ex["buggy_output"]),
+            "failing_checks": ex["failing_checks"],
+        }
+    return view
 
 
 def _cost_by_model(profile: dict) -> list[dict]:
@@ -74,6 +120,11 @@ def build_context(bundle: dict, title: str) -> dict:
         "cost_by_model": _cost_by_model(profile),
         "recommendations": bundle.get("recommendations", []),
         "calibration": cal,
+        "gallery": [_gallery_view(g) for g in bundle.get("regression_gallery", [])],
+        "case_details": {
+            sid: [_case_view(d) for d in cases]
+            for sid, cases in bundle.get("case_details", {}).items()
+        },
     }
 
 
