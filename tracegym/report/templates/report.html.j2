@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  :root {
+    --bg: #f7f7f8; --panel: #ffffff; --ink: #1a1a1f; --muted: #6b6b76;
+    --line: #e6e6ea; --accent: #4f46e5; --good: #16a34a; --bad: #dc2626;
+    --warn: #d97706; --grey: #6b7280; --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0e0e11; --panel:#17171c; --ink:#ececf1; --muted:#9a9aa6;
+      --line:#26262e; --accent:#8b85ff; --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.4); }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:960px; margin:0 auto; padding:48px 24px 80px; }
+  header.hero { margin-bottom:36px; }
+  .hero h1 { font-size:34px; letter-spacing:-.02em; margin:0 0 6px; }
+  .hero p { color:var(--muted); margin:0; font-size:15px; }
+  .grid { display:grid; gap:16px; }
+  .kpis { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); margin:28px 0 40px; }
+  .tile { background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:18px 20px; box-shadow:var(--shadow); }
+  .tile .n { font-size:28px; font-weight:650; letter-spacing:-.02em; }
+  .tile .l { color:var(--muted); font-size:12.5px; margin-top:2px; }
+  section { margin:40px 0; }
+  section h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--muted); margin:0 0 16px; font-weight:600; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:22px 24px; box-shadow:var(--shadow); }
+  .card + .card { margin-top:16px; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .chip { display:inline-block; font-size:12px; font-weight:650; padding:3px 10px;
+    border-radius:999px; }
+  .chip.good,.chip.PASS,.chip.SAFE { background:color-mix(in srgb,var(--good) 15%,transparent); color:var(--good); }
+  .chip.bad,.chip.BLOCK,.chip.REGRESSES { background:color-mix(in srgb,var(--bad) 15%,transparent); color:var(--bad); }
+  .chip.INCONCLUSIVE { background:color-mix(in srgb,var(--warn) 15%,transparent); color:var(--warn); }
+  .chip.ADVISORY_ONLY { background:color-mix(in srgb,var(--grey) 18%,transparent); color:var(--grey); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  td.num,th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .bar { height:8px; border-radius:6px; background:color-mix(in srgb,var(--accent) 18%,transparent); overflow:hidden; }
+  .bar > span { display:block; height:100%; background:var(--accent); border-radius:6px; }
+  .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:14px; margin:6px 0 18px; }
+  .metrics .m .v { font-size:20px; font-weight:600; }
+  .metrics .m .k { color:var(--muted); font-size:12px; }
+  .checklist { display:grid; gap:8px; margin-top:8px; }
+  .checkrow { display:grid; grid-template-columns:180px 1fr 48px; gap:12px; align-items:center; font-size:13px; }
+  .note { color:var(--muted); font-size:13px; margin-top:12px; }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; }
+  code { background:color-mix(in srgb,var(--ink) 8%,transparent); padding:1px 6px; border-radius:6px; }
+  footer { color:var(--muted); font-size:12.5px; margin-top:48px; border-top:1px solid var(--line); padding-top:18px; }
+  .confusion { display:grid; grid-template-columns:auto auto auto; gap:1px; background:var(--line);
+    border:1px solid var(--line); border-radius:10px; overflow:hidden; width:max-content; }
+  .confusion div { background:var(--panel); padding:8px 16px; font-size:13px; text-align:center; }
+  .confusion .hd { color:var(--muted); font-weight:600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <h1>{{ title }}</h1>
+    <p>Record, replay, score, and gate {{ total_cases }} cases across three suites &middot; generated {{ generated_at }} &middot; $0, zero keys</p>
+  </header>
+
+  <div class="grid kpis">
+    <div class="tile"><div class="n">{{ recall.caught }}/{{ recall.total }}</div><div class="l">Seeded regressions caught</div></div>
+    <div class="tile"><div class="n">{{ determinism.pct }}%</div><div class="l">Replay determinism ({{ determinism.identical }}/{{ determinism.cases }} identical)</div></div>
+    <div class="tile"><div class="n">{{ total_cases }}</div><div class="l">Golden cases</div></div>
+    <div class="tile"><div class="n">${{ '%.4f'|format(total_cost) }}</div><div class="l">Counterfactual spend</div></div>
+    <div class="tile"><div class="n">{{ needs_review }}</div><div class="l">Cases routed to review</div></div>
+  </div>
+
+  <section>
+    <h2>Benchmark vs reference &middot; the gate</h2>
+    <div class="card">
+      <div class="row">
+        <div><strong>Seeded bug:</strong> <span class="mono">{{ gate.bug }}</span> vs the promoted baseline</div>
+        <span class="chip {{ gate.verdict }}">{{ gate.verdict }}</span>
+      </div>
+      <div class="metrics" style="margin-top:16px">
+        <div class="m"><div class="v">{{ '%.3f'|format(gate.mean_delta) }}</div><div class="k">mean score &Delta;</div></div>
+        <div class="m"><div class="v">[{{ '%.2f'|format(gate.ci[0]) }}, {{ '%.2f'|format(gate.ci[1]) }}]</div><div class="k">95% bootstrap CI</div></div>
+        <div class="m"><div class="v">{{ gate.new_invariant_fails }}</div><div class="k">new invariant fails</div></div>
+      </div>
+      {% if gate.reasons %}<div class="note">Blocked because: {{ gate.reasons | join('; ') }}.</div>{% endif %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Agent scorecard</h2>
+    {% for s in scorecards %}
+    <div class="card">
+      <div class="row"><strong>{{ s.suite }}</strong><span class="chip good">{{ s.cases }} cases</span></div>
+      <div class="metrics">
+        <div class="m"><div class="v">{{ s.task_success_pct }}%</div><div class="k">task success</div></div>
+        <div class="m"><div class="v">{{ s.mean_score }}</div><div class="k">mean score</div></div>
+        <div class="m"><div class="v">{{ s.tool_calls }}</div><div class="k">tool calls</div></div>
+        <div class="m"><div class="v">{{ s.invariant_failures }}</div><div class="k">invariant fails</div></div>
+        <div class="m"><div class="v">${{ '%.5f'|format(s.cost_usd) }}</div><div class="k">cost</div></div>
+      </div>
+      <div class="checklist">
+        {% for c in s.checks %}
+        <div class="checkrow">
+          <span class="mono">{{ c.name }}</span>
+          <span class="bar"><span style="width:{{ c.pct }}%"></span></span>
+          <span class="num">{{ c.pct }}%</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section>
+    <h2>Efficiency &middot; cost and validated savings</h2>
+    <div class="card">
+      <div class="metrics">
+        <div class="m"><div class="v">${{ '%.6f'|format(profile.totals.cost_usd) }}</div><div class="k">run cost</div></div>
+        <div class="m"><div class="v">{{ profile.totals.input_tokens }}</div><div class="k">input tokens</div></div>
+        <div class="m"><div class="v">{{ profile.totals.oi_ratio }}</div><div class="k">output/input ratio</div></div>
+        <div class="m"><div class="v">{{ profile.latency_ms.p95 }}ms</div><div class="k">p95 latency</div></div>
+        <div class="m"><div class="v">{{ profile.budget.pct_used }}%</div><div class="k">of ${{ profile.budget.cap_usd }} budget</div></div>
+      </div>
+      {% if cost_by_model %}
+      <div class="checklist" style="margin-top:8px">
+        {% for m in cost_by_model %}
+        <div class="checkrow">
+          <span class="mono">{{ m.model }}</span>
+          <span class="bar"><span style="width:{{ m.pct }}%"></span></span>
+          <span class="num">${{ '%.6f'|format(m.cost_usd) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <table style="margin-top:18px">
+        <thead><tr><th>Recommendation</th><th>Rule</th><th>Status</th><th class="num">Est. saving</th></tr></thead>
+        <tbody>
+        {% for r in recommendations %}
+          <tr>
+            <td>{{ r.title }}<div class="note" style="margin:2px 0 0">{{ r.detail }}</div></td>
+            <td class="mono">{{ r.rule_id }}</td>
+            <td><span class="chip {{ r.status }}">{{ r.status }}</span></td>
+            <td class="num">{% if r.est_saving_usd %}${{ '%.6f'|format(r.est_saving_usd) }}{% else %}&mdash;{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <div class="note">A recommendation is marked SAFE only after a deterministic replay proves it does not regress quality. Judge changes are validated by verdict agreement, not the score gate.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Calibration &middot; can the judge be trusted</h2>
+    <div class="card">
+      <div class="metrics">
+        <div class="m"><div class="v">{{ calibration.cohen_kappa }}</div><div class="k">Cohen's &kappa;</div></div>
+        <div class="m"><div class="v">{{ calibration.raw_agreement }}</div><div class="k">raw agreement</div></div>
+        <div class="m"><div class="v">{{ calibration.pabak }}</div><div class="k">PABAK</div></div>
+        <div class="m"><div class="v">{{ calibration.n }}</div><div class="k">labeled pairs</div></div>
+        <div class="m"><div class="v"><span class="chip {{ 'good' if calibration.gate_mode == 'judge_gates' else 'INCONCLUSIVE' }}">{{ calibration.gate_mode }}</span></div><div class="k">gate mode</div></div>
+      </div>
+      {% if calibration.confusion %}
+      <div class="confusion" style="margin-top:8px">
+        <div class="hd"></div><div class="hd">judge pass</div><div class="hd">judge fail</div>
+        <div class="hd">human pass</div><div>{{ calibration.confusion.tp }}</div><div>{{ calibration.confusion.fn }}</div>
+        <div class="hd">human fail</div><div>{{ calibration.confusion.fp }}</div><div>{{ calibration.confusion.tn }}</div>
+      </div>
+      {% endif %}
+      <div class="note">This demo calibrates against {{ calibration.n }} deterministic canary golds, an illustrative drift check. A real Cohen's &kappa; requires human labels against a live cross-family judge: run <code>tg label</code> then <code>tg calibrate</code>. The ladder degrades the judge to advisory below &kappa; = 0.55 rather than fake a number.</div>
+    </div>
+  </section>
+
+  <footer>
+    TraceGym &middot; deterministic, keyless agent evaluation. Numbers above are measured from this run, not asserted.
+  </footer>
+</div>
+</body>
+</html>
