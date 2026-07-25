@@ -63,8 +63,8 @@ Repository = "https://github.com/hoomanesteki/tracegym-ai-agent-evaluation"
 Documentation = "https://hoomanesteki.github.io/tracegym-ai-agent-evaluation/"
 
 [tool.hatch.build.targets.wheel]
-# Bundles the whole package tree, including non-Python data: schema.sql, the
-# Jinja report templates, and the zero-key demo assets under _demodata.
+# Bundles the whole package tree, including non-Python data: schema.sql and the
+# Jinja report template. The demo workspace is built from bundled code at runtime.
 packages = ["tracegym"]
 
 [tool.hatch.build.targets.sdist]

@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+title: TraceGym
+message: "If you use TraceGym in your work, please cite it."
+type: software
+authors:
+  - family-names: Esteki
+    given-names: Hooman
+repository-code: "https://github.com/hoomanesteki/tracegym-ai-agent-evaluation"
+abstract: >-
+  An OpenTelemetry-native evaluation and regression harness for AI agents:
+  deterministic keyless replay, layered deterministic checks, a calibrated
+  LLM-judge ensemble, a paired-bootstrap CI gate, and a validated cost/speed
+  advisor.
+keywords:
+  - llm-evaluation
+  - ai-agents
+  - opentelemetry
+  - llm-as-a-judge
+  - regression-testing
+license: MIT
+version: 0.1.0
+date-released: "2026-07-25"

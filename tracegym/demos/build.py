@@ -2,7 +2,7 @@
 
 Produces a self-contained workspace: the sample database, three golden suites with
 rubrics, recorded fixtures, a promoted baseline per suite, and a seeded judgment
-cache. `tg demo` copies this and replays it with no keys.
+cache. `tg demo` builds and replays this with no keys.
 """
 
 from __future__ import annotations

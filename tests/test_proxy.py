@@ -51,3 +51,11 @@ def test_frozen_miss_returns_424(tmp_path):
     app = create_app(conn, tmp_path, mode="frozen")
     resp = TestClient(app).post("/v1/chat/completions", json=REQUEST)
     assert resp.status_code == 424
+
+
+def test_live_mode_without_upstream_returns_500(tmp_path, monkeypatch):
+    monkeypatch.delenv("TG_UPSTREAM_BASE_URL", raising=False)
+    conn = connect(check_same_thread=False)
+    app = create_app(conn, tmp_path, mode="live", upstream_base_url="")
+    resp = TestClient(app).post("/v1/chat/completions", json=REQUEST)
+    assert resp.status_code == 500  # live mode entered, refused without an upstream

@@ -1,8 +1,8 @@
 """Authored content for the bundled demo: corpus, database, and question sets.
 
 Kept in code (not scattered files) so the corpus, the gold SQL, and the cases can
-never drift out of sync. The build script turns this into golden suites, fixtures,
-and a sample database under _demodata.
+never drift out of sync. The build step turns this into golden suites, fixtures,
+and a sample database inside a demo workspace at runtime.
 """
 
 from __future__ import annotations

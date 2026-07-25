@@ -1,0 +1,45 @@
+name: release
+
+# Publish to PyPI on a version tag using trusted publishing (OIDC, no API token).
+# One-time setup on PyPI: add this repo and this workflow as a trusted publisher
+# for the tracegym project. Until then, tag builds still attach the wheel here.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Build sdist and wheel
+        run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    # Stays off until you enable it: set the repository variable PYPI_PUBLISH=true
+    # after registering this repo as a trusted publisher on PyPI. Until then a tag
+    # still builds the wheel above; it just does not publish, so the run stays green.
+    if: ${{ vars.PYPI_PUBLISH == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/tracegym/
+    permissions:
+      id-token: write # required for trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

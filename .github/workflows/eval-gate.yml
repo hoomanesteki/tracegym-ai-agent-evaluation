@@ -1,0 +1,55 @@
+name: eval-gate
+
+# The eval gate the project runs on itself: replay the bundled suites, and block
+# the merge if a guarantee regresses (determinism, seeded-regression recall, or
+# the gate failing to block a known bug). No secrets are configured on purpose.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync
+        run: uv sync
+
+      - name: Run the eval gate (keyless)
+        run: |
+          uv run python - <<'PY'
+          import tempfile
+          from tracegym.demos.run import run_demo
+          from tracegym.report import render_report
+
+          bundle = run_demo(tempfile.mkdtemp())
+          render_report(bundle, "report.html")
+
+          recall = bundle["recall"]
+          det = bundle["determinism"]
+          gate = bundle["gate_demo"]
+          print(f"recall: {recall['caught']}/{recall['total']}")
+          print(f"determinism: {det['pct']}%")
+          print(f"gate demo: {gate['verdict']}")
+
+          assert det["pct"] == 100.0, "replay determinism regressed"
+          assert recall["caught"] == recall["total"], "seeded-regression recall dropped"
+          assert gate["verdict"] == "BLOCK", "gate failed to block a known regression"
+          PY
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: report.html
