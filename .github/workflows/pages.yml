@@ -1,0 +1,55 @@
+name: pages
+
+# Build the Quarto site plus the live demo report and publish to GitHub Pages.
+# Rebuilt on every push to main so the site and the code can never drift.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync
+        run: uv sync
+
+      - name: Generate the demo report
+        run: uv run python -c "import tempfile; from tracegym.demos.run import run_demo; from tracegym.report import render_report; render_report(run_demo(tempfile.mkdtemp()), 'docs/report.html')"
+
+      - name: Setup Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Render site
+        run: quarto render docs
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

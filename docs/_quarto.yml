@@ -1,0 +1,38 @@
+project:
+  type: website
+  output-dir: _site
+  resources:
+    - report.html
+
+website:
+  title: "TraceGym"
+  description: "Deterministic, keyless evaluation and CI gating for AI agents."
+  favicon: assets/favicon.svg
+  navbar:
+    logo: assets/favicon.svg
+    left:
+      - text: Overview
+        href: index.qmd
+      - text: How it works
+        href: how-it-works.qmd
+      - text: Calibration
+        href: calibration.qmd
+    right:
+      - text: "Live report"
+        href: report.html
+      - icon: github
+        href: https://github.com/hoomanesteki/tracegym-ai-agent-evaluation
+  page-footer:
+    center: "TraceGym · MIT · built end to end by Hooman Esteki"
+
+format:
+  html:
+    theme:
+      light: [cosmo, custom.scss]
+      dark: [darkly, custom.scss]
+    toc: false
+    css: custom.scss
+    grid:
+      body-width: 900px
+    mermaid:
+      theme: neutral

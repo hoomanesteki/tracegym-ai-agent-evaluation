@@ -1,0 +1,67 @@
+---
+title: "TraceGym"
+pagetitle: "TraceGym — deterministic, keyless agent evaluation"
+---
+
+[**$0 · zero API keys · OpenTelemetry-native**]{.hero-tag}
+
+::: {.lead}
+Agent demos are easy. Agent regressions are silent. TraceGym records an agent
+once, replays it deterministically with no API keys, scores it with layered
+deterministic checks and a calibrated LLM-judge ensemble, and blocks regressions
+in CI before they merge.
+:::
+
+## The numbers
+
+Measured by the demo, not asserted.
+
+::: {.metric-grid}
+::: {.metric}
+[100%]{.metric-value}[Replay determinism]{.metric-label}
+:::
+::: {.metric}
+[10 / 10]{.metric-value}[Seeded regressions caught]{.metric-label}
+:::
+::: {.metric}
+[32]{.metric-value}[Golden cases]{.metric-label}
+:::
+::: {.metric}
+[$0.00]{.metric-value}[Spend to build and run]{.metric-label}
+:::
+:::
+
+## One command
+
+```bash
+uvx --from git+https://github.com/hoomanesteki/tracegym-ai-agent-evaluation tracegym demo
+```
+
+It builds a self-contained workspace, replays the suites offline, blocks the
+seeded regressions, and opens the [report](report.html). Nothing leaves your
+machine.
+
+## The pipeline
+
+```{mermaid}
+flowchart LR
+  A[Agent] --> C[Capture<br/>OTel GenAI spans]
+  C --> S[(Store<br/>SQLite + blobs)]
+  S --> R[Replay<br/>frozen, keyless]
+  R --> L1[L1 checks]
+  R --> L2[L2 judges]
+  L1 --> G{Gate}
+  L2 --> G
+  G -->|regression| B[Block]
+  G -->|clean| P[Pass]
+  S --> D[Advisor]
+```
+
+## What it evaluates
+
+[task completion]{.pill} [tool selection]{.pill} [tool-call efficiency]{.pill}
+[context fidelity]{.pill} [trajectory validity]{.pill} [SQL execution accuracy]{.pill}
+[cost budgets]{.pill} [latency budgets]{.pill} [PII safety]{.pill}
+
+An agent is benchmarked against a reference: a prior version, an alternate model,
+or a deterministic domain solver. See [How it works](how-it-works.qmd).

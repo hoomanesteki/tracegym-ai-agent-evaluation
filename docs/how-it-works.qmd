@@ -1,0 +1,79 @@
+---
+title: "How it works"
+pagetitle: "TraceGym — how it works"
+---
+
+Five stages, one guarantee: what runs in CI is byte-identical to what was
+recorded, with no API keys.
+
+```{mermaid}
+flowchart TB
+  subgraph CAP[1 · Capture]
+    P[OpenAI-compatible proxy] --> SP[OTel GenAI spans]
+    T["@tg.tool decorator"] --> SP
+    SP --> FX[Content-addressed fixtures]
+  end
+  CAP --> ST[(2 · Store<br/>SQLite + zstd blobs)]
+  ST --> RP[3 · Replay<br/>frozen = keyless, byte-identical]
+  RP --> SC
+  subgraph SC[4 · Score]
+    L1[L1 deterministic checks] --> AGG[Per-case score]
+    L2[L2 judge ensemble<br/>cached · confidence] --> AGG
+  end
+  SC --> GT{5 · Gate<br/>paired bootstrap 10k}
+  GT -->|block| X[Regression blocked]
+  GT -->|pass| OK[Merge]
+```
+
+::: {.step}
+### 1. Capture
+Every side-effecting call an agent makes is recorded as an OpenTelemetry
+GenAI-semconv span (`gen_ai.provider.name`, token usage, a namespaced cost) plus
+a content-addressed fixture. A real `SpanExporter` also ingests spans from any
+OpenTelemetry SDK.
+:::
+
+::: {.step}
+### 2. Store
+Rows hold SHA-256 pointers; large payloads live once in a zstd blob store, so
+identical tool and LLM outputs share storage and every artifact has a stable
+identity for caching and replay.
+:::
+
+::: {.step}
+### 3. Replay
+`frozen` mode replays fixtures with no network and no keys, byte-identically
+across reruns. It refuses to run without recorded fixtures rather than fabricate.
+:::
+
+::: {.step}
+### 4. Score
+L1 is deterministic: schema, citation and grounding, a hardened SQL AST guard, a
+SQL execution-accuracy oracle, tool-selection, trajectory, PII, and cost/latency
+budgets. L2 is a cross-family judge ensemble, cached and confidence-aware, that
+returns **NEEDS_REVIEW** rather than a forced verdict when the judges disagree.
+:::
+
+::: {.step}
+### 5. Gate
+A paired bootstrap over per-case deltas blocks a merge only on high-confidence
+signals: a new invariant failure, a mean score drop whose 95% CI stays below
+zero, or a cost regression. Uncertain wobbles warn, not block. The same pure
+predicate powers the CI gate and the efficiency advisor.
+:::
+
+## Benchmark against a reference
+
+The gate is an A/B benchmark engine. The reference is any run: a prior version,
+an alternate model, or a deterministic **domain solver**. The SQL analyst is
+graded by execution accuracy against a gold query run over the bundled database,
+the standard execution-accuracy metric, at $0.
+
+## Efficiency advisor
+
+Beyond blocking regressions, TraceGym proposes going forward. The advisor
+profiles cost, tokens, and latency, then suggests cheaper or faster
+configurations. A suggestion is marked **SAFE** only after a deterministic replay
+proves quality did not regress. Judge downgrades are validated by verdict
+agreement, not the score gate, because letting a cheaper judge grade itself
+against the gate would be circular.

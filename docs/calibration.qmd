@@ -1,0 +1,52 @@
+---
+title: "Calibration"
+pagetitle: "TraceGym — judge calibration"
+---
+
+An LLM judge is only useful if you know how far to trust it. TraceGym measures
+that instead of assuming it.
+
+## The ladder
+
+Cohen's κ is reported next to raw agreement and PABAK, because κ is punished by
+the pass-heavy class balance of real agent outputs. The action is pre-decided, so
+there is no room to fudge a number:
+
+::: {.metric-grid}
+::: {.metric}
+[κ ≥ 0.70]{.metric-value}[Judge gates in CI]{.metric-label}
+:::
+::: {.metric}
+[0.55 – 0.70]{.metric-value}[Iterate, gate on the agreement subset]{.metric-label}
+:::
+::: {.metric}
+[κ < 0.55]{.metric-value}[Advisory only, never blocks CI]{.metric-label}
+:::
+:::
+
+## Confidence and human review
+
+The ensemble reports its own confidence. When the two cross-family judges
+disagree, a verdict fails to parse, or a score sits on the threshold, the case is
+routed to **NEEDS_REVIEW** rather than forced to pass or fail. That is the honest
+alternative to a confident wrong verdict.
+
+## Missing and late labels
+
+Labels are optional and may arrive late. With too few labels or weak agreement,
+the judge degrades to advisory and the gate falls back to the deterministic L1
+checks, rather than blocking a merge on missing evidence. Nothing is fabricated.
+
+::: {.callout-honest}
+**On the demo's numbers.** The bundled demo runs at $0 with a deterministic local
+judge and calibrates against a small set of canary golds, an illustrative drift
+check. A real Cohen's κ needs your human labels against a live cross-family
+judge: run `tg label` to label a stratified sample, then `tg calibrate`. The
+harness ships the protocol; the honest number is yours to produce.
+:::
+
+## Drift canaries
+
+A meta-judge suite of fixed answers with known verdicts monitors judge and rubric
+drift. A `rubric_integrity` check pins the rubric's hash, so tampering with the
+rubric is caught deterministically, without a single API call.
