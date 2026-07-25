@@ -227,7 +227,7 @@ def record(
         from tracegym.capture.proxy import create_app
         from tracegym.store import connect
     except ImportError:
-        console.print("The proxy needs extras: uv sync --extra proxy")
+        console.print('The proxy needs the extra: pip install "tracegym[proxy]"')
         raise typer.Exit(1) from None
 
     db.parent.mkdir(parents=True, exist_ok=True)

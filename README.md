@@ -96,12 +96,14 @@ flowchart LR
 ## Use it on your own agent
 
 ```bash
-uv add tracegym
+uv add "git+https://github.com/hoomanesteki/tracegym-ai-agent-evaluation"
 tg record --proxy --port 8080     # point your agent's base_url here, run it once
 tg gate --vs baseline             # exit 1 on a regression, wire into CI
 tg advise                         # validated cheaper/faster suggestions
 tg report                         # open the HTML report
 ```
+
+The command is `tg` (or its alias `tracegym`).
 
 The CI recipe is [.github/workflows/eval-gate.yml](.github/workflows/eval-gate.yml):
 it replays the suites and blocks the merge with **no secrets configured**.
@@ -129,6 +131,14 @@ answer to "you cherry-picked the bugs".
   judge. Python only, no hosted UI.
 
 ## Install
+
+Until the PyPI release is published, install from git:
+
+```bash
+uv add "git+https://github.com/hoomanesteki/tracegym-ai-agent-evaluation"
+```
+
+Once it is on PyPI:
 
 ```bash
 uv add tracegym                 # core (keyless demo, checks, gate, report)

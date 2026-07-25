@@ -55,7 +55,10 @@ dev = ["pytest>=8.0", "ruff>=0.6"]
 all = ["tracegym[proxy,judges,mlflow]"]
 
 [project.scripts]
+# `tg` is the short daily command; `tracegym` is an alias so `uvx tracegym ...`
+# (executable name = package name) works out of the box.
 tg = "tracegym.cli:app"
+tracegym = "tracegym.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/hoomanesteki/tracegym-ai-agent-evaluation"
