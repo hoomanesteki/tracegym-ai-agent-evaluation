@@ -150,6 +150,23 @@ CREATE TABLE IF NOT EXISTS labels (
     UNIQUE (case_id, output_sha, labeler, round)
 );
 
+-- Validated efficiency recommendations from the advisor. status is one of
+-- SAFE | REGRESSES | INCONCLUSIVE | ADVISORY_ONLY; a SAFE row means a completed
+-- deterministic replay proved the change does not regress quality.
+CREATE TABLE IF NOT EXISTS recommendations (
+    id             TEXT PRIMARY KEY,
+    run_id         TEXT NOT NULL,
+    rule_id        TEXT NOT NULL,
+    status         TEXT NOT NULL,
+    title          TEXT,
+    est_saving_usd REAL,
+    est_saving_pct REAL,
+    evidence       TEXT,                   -- JSON validation record
+    created_at     TEXT NOT NULL,
+    FOREIGN KEY (run_id) REFERENCES runs (id)
+);
+CREATE INDEX IF NOT EXISTS idx_reco_run ON recommendations (run_id);
+
 -- Promoted baselines the gate compares against. name is usually "baseline".
 CREATE TABLE IF NOT EXISTS baselines (
     name        TEXT PRIMARY KEY,
