@@ -229,3 +229,7 @@ runs/
 .quarto/
 docs/site/_site/
 node_modules/
+
+docs/_site/
+docs/.quarto/
+docs/report.html
