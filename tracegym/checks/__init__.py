@@ -9,6 +9,7 @@ from tracegym.checks import (
     agentic,  # noqa: F401  tool_selection, trajectory
     budgets,  # noqa: F401  budget, latency
     grounding,  # noqa: F401  citation / context fidelity
+    integrity,  # noqa: F401  rubric_integrity
     matchers,  # noqa: F401  contains, not_contains, regex, schema_valid
     safety,  # noqa: F401  pii, abstain
     sql_exec,  # noqa: F401  sql_exec_accuracy oracle
