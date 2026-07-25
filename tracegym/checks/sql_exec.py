@@ -13,8 +13,26 @@ from tracegym.checks.base import CheckResult, get_field, register
 from tracegym.checks.sql_guard import run_select
 
 
+def _norm(value) -> tuple:
+    """Type-aware canonical form of a cell so equality is not stringified.
+
+    Numbers compare numerically (15 and 15.0 match; 1 and "1" do not), NULL stays
+    distinct from the text "None", and text/bytes keep their types. Each value is
+    tagged with its kind so cross-type values never collide or sort-compare.
+    """
+    if value is None:
+        return ("null",)
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, (int, float)):
+        return ("num", float(value))
+    if isinstance(value, bytes):
+        return ("bytes", value)
+    return ("text", str(value))
+
+
 def _multiset(rows: list[tuple]) -> list[tuple]:
-    return sorted(tuple(str(v) for v in row) for row in rows)
+    return sorted(tuple(_norm(v) for v in row) for row in rows)
 
 
 @register("sql_exec_accuracy")

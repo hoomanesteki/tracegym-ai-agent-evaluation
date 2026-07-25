@@ -15,15 +15,34 @@ from sqlglot import exp
 
 from tracegym.checks.base import CheckResult, get_field, register
 
-FORBIDDEN_NODES = (
-    exp.Insert,
-    exp.Update,
-    exp.Delete,
-    exp.Create,
-    exp.Drop,
-    exp.Alter,
-    exp.Command,  # PRAGMA / ATTACH / VACUUM parse as Command
-)
+# The top-level statement must itself be one of these read-only query forms. This
+# allowlist is the real guard: a denylist alone missed ATTACH/DETACH/PRAGMA, which
+# are not SELECTs but can still contain a subquery Select to fool a "contains a
+# SELECT" check.
+ALLOWED_ROOTS = (exp.Select, exp.Union, exp.Intersect, exp.Except)
+
+# Belt-and-suspenders: reject these node types anywhere (for example DML hidden in
+# a subquery). Built with getattr so it stays correct across sqlglot versions where
+# ATTACH/PRAGMA/etc. parse as their own node types rather than exp.Command.
+_FORBIDDEN_NAMES = [
+    "Insert",
+    "Update",
+    "Delete",
+    "Create",
+    "Drop",
+    "Alter",
+    "Command",
+    "Attach",
+    "Detach",
+    "Pragma",
+    "Analyze",
+    "Set",
+    "Use",
+    "TruncateTable",
+    "Vacuum",
+    "Reindex",
+]
+FORBIDDEN_NODES = tuple(getattr(exp, name) for name in _FORBIDDEN_NAMES if hasattr(exp, name))
 
 FUNCTION_DENYLIST = {"load_extension", "readfile", "writefile", "edit", "fts3_tokenizer"}
 
@@ -39,12 +58,10 @@ def select_only(sql: str) -> tuple[bool, str]:
         return False, f"expected exactly one statement, got {len(stmts)}"
 
     root = stmts[0]
-    if isinstance(root, FORBIDDEN_NODES):
-        return False, f"top-level {type(root).__name__} is not a SELECT"
+    if not isinstance(root, ALLOWED_ROOTS):
+        return False, f"top-level {type(root).__name__} is not a read-only SELECT"
     if next(root.find_all(*FORBIDDEN_NODES), None) is not None:
         return False, "contains a forbidden DML/DDL/command node"
-    if root.find(exp.Select) is None:
-        return False, "no SELECT found in statement"
 
     for fn in root.find_all(exp.Anonymous, exp.Func):
         name = (fn.name or "").lower()

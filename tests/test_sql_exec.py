@@ -55,3 +55,11 @@ def test_guard_reads_rows(tmp_path):
     _make_db(db)
     rows = run_select(db, "SELECT COUNT(*) FROM sales")
     assert rows == [(3,)]
+
+
+def test_multiset_is_type_aware():
+    from tracegym.checks.sql_exec import _multiset
+
+    assert _multiset([(15.0,)]) == _multiset([(15,)])  # AVG float == SUM/COUNT int
+    assert _multiset([(1,)]) != _multiset([("1",)])  # int is not the text "1"
+    assert _multiset([(None,)]) != _multiset([("None",)])  # NULL is not the text "None"

@@ -27,7 +27,17 @@ from tracegym.capture.llm import groq_chat, local_chat, record_from_content
 from tracegym.capture.otel import llm_span_attributes, record_span, tool_span_attributes
 from tracegym.config import cost_usd, load_prices
 from tracegym.store.blobs import get, put
-from tracegym.util.canon import canonical_json, sha256_hex
+from tracegym.util.canon import canonical_json, scrub, sha256_hex
+
+
+def _fixture_key(prefix: str, payload: object) -> str:
+    """Hash a call to its fixture key after scrubbing volatile fields.
+
+    Scrubbing timestamps and UUIDs before hashing means a prompt or tool argument
+    that legitimately embeds "now" still maps to the same recorded fixture on
+    replay, instead of a spurious FixtureMiss.
+    """
+    return sha256_hex(scrub(prefix + canonical_json(payload).decode("utf-8")).encode("utf-8"))
 
 
 class FixtureMiss(Exception):
@@ -65,6 +75,7 @@ class Runtime:
         self.seed = seed
         self.live_calls = 0  # real fn / provider invocations; stays 0 in frozen_strict
         self._seq = 0
+        self._clock_ns = 0  # deterministic per-run clock, advanced by recorded latency
 
     # -- tools -----------------------------------------------------------------
 
@@ -79,12 +90,10 @@ class Runtime:
             if args:
                 raise TypeError(f"{fn.__name__} must be called with keyword arguments only")
             input_sha = put(self.blob_root, {"fn": fn.__name__, "kwargs": kwargs})
-            key = sha256_hex(fn.__name__.encode() + canonical_json(kwargs))
-            t0 = time.perf_counter()
-            output, output_sha = self._resolve(
+            key = _fixture_key(fn.__name__ + ":", kwargs)
+            output, output_sha, latency_ms = self._resolve(
                 key, "tool", fn.__name__, input_sha, lambda: fn(**kwargs)
             )
-            latency_ms = (time.perf_counter() - t0) * 1000
             self._span(
                 "tool",
                 fn.__name__,
@@ -96,7 +105,7 @@ class Runtime:
                     call_id=key[:16],
                     input_sha=input_sha,
                     output_sha=output_sha,
-                    latency_ms=round(latency_ms, 3),
+                    latency_ms=latency_ms,
                 ),
             )
             return output
@@ -112,22 +121,18 @@ class Runtime:
         model = model or self.model
         payload = {"messages": messages, "model": model, "params": params}
         input_sha = put(self.blob_root, payload)
-        key = sha256_hex(b"chat:" + canonical_json(payload))
+        key = _fixture_key("chat:", payload)
 
         def produce() -> dict:
-            t0 = time.perf_counter()
-            record = self._provider_chat(messages, model, params)
-            record["latency_ms"] = round((time.perf_counter() - t0) * 1000, 3)
-            return record
+            return self._provider_chat(messages, model, params)
 
-        record, output_sha = self._resolve(key, "llm", "chat", input_sha, produce)
+        record, output_sha, latency_ms = self._resolve(key, "llm", "chat", input_sha, produce)
         usage = record.get("usage", {"input_tokens": 0, "output_tokens": 0})
         provider = record.get("provider", self.provider)
         resp_model = record.get("model", model)
         cost = cost_usd(
             self.prices, provider, resp_model, usage["input_tokens"], usage["output_tokens"]
         )
-        latency_ms = record.get("latency_ms", 0.0)
         self._span(
             "llm",
             "chat",
@@ -160,30 +165,43 @@ class Runtime:
 
     def _resolve(
         self, key: str, kind: str, fn_name: str, input_sha: str, produce: Callable[[], Any]
-    ) -> tuple[Any, str]:
-        row = self.conn.execute("SELECT output_sha FROM fixtures WHERE key = ?", (key,)).fetchone()
+    ) -> tuple[Any, str, float]:
+        """Return (output, output_sha, latency_ms).
+
+        Latency is measured once at record time and stored on the fixture, so
+        frozen replay reports the recorded latency, not the replay timing. The
+        live output is re-read through the blob store so the recording run and
+        frozen replay hand the agent an identically JSON-normalized object.
+        """
+        row = self.conn.execute(
+            "SELECT output_sha, latency_ms FROM fixtures WHERE key = ?", (key,)
+        ).fetchone()
 
         if self.mode == "frozen_strict":
             if row is None:
                 raise FixtureMiss(f"no fixture for {fn_name} (key={key[:12]})")
-            return get(self.blob_root, row["output_sha"]), row["output_sha"]
+            return get(self.blob_root, row["output_sha"]), row["output_sha"], row["latency_ms"]
 
         if self.mode == "frozen_record" and row is not None:
-            return get(self.blob_root, row["output_sha"]), row["output_sha"]
+            return get(self.blob_root, row["output_sha"]), row["output_sha"], row["latency_ms"]
 
-        # live, or a frozen_record miss: actually run and record.
+        # live, or a frozen_record miss: actually run, time it, and record.
         self.live_calls += 1
+        t0 = time.perf_counter()
         output = produce()
+        latency_ms = round((time.perf_counter() - t0) * 1000, 3)
         output_sha = put(self.blob_root, output)
         self.conn.execute(
             """
             INSERT OR REPLACE INTO fixtures
-                (key, kind, fn_name, input_sha, output_sha, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (key, kind, fn_name, input_sha, output_sha, latency_ms, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (key, kind, fn_name, input_sha, output_sha, _now_iso()),
+            (key, kind, fn_name, input_sha, output_sha, latency_ms, _now_iso()),
         )
-        return output, output_sha
+        # Re-read so live callers see the same JSON-normalized object frozen replay
+        # returns (tuples become lists, int keys become strings, etc.).
+        return get(self.blob_root, output_sha), output_sha, latency_ms
 
     def _span(
         self,
@@ -194,8 +212,13 @@ class Runtime:
         latency_ms: float,
         attributes: dict,
     ) -> None:
+        # A per-run cumulative clock derived from recorded latencies, so span
+        # timestamps and their ordering are deterministic under frozen replay
+        # rather than wall-clock dependent.
         self._seq += 1
-        end_ns = time.time_ns()
+        start_ns = self._clock_ns
+        end_ns = start_ns + int(latency_ms * 1_000_000)
+        self._clock_ns = end_ns
         record_span(
             self.conn,
             span_id=f"{self.trace_id}-{self._seq:04d}",
@@ -204,7 +227,7 @@ class Runtime:
             name=name,
             input_sha=input_sha,
             output_sha=output_sha,
-            start_ns=end_ns - int(latency_ms * 1_000_000),
+            start_ns=start_ns,
             end_ns=end_ns,
             attributes=attributes,
         )

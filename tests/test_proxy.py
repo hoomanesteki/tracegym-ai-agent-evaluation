@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import glob
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -59,3 +61,18 @@ def test_live_mode_without_upstream_returns_500(tmp_path, monkeypatch):
     app = create_app(conn, tmp_path, mode="live", upstream_base_url="")
     resp = TestClient(app).post("/v1/chat/completions", json=REQUEST)
     assert resp.status_code == 500  # live mode entered, refused without an upstream
+
+
+def test_non_dict_body_returns_400(tmp_path):
+    conn = connect(check_same_thread=False)
+    app = create_app(conn, tmp_path, mode="frozen")
+    resp = TestClient(app).post("/v1/chat/completions", json=[1, 2, 3])
+    assert resp.status_code == 400  # not a dict, does not crash with a 500
+
+
+def test_frozen_miss_persists_no_blob(tmp_path):
+    conn = connect(check_same_thread=False)
+    app = create_app(conn, tmp_path, mode="frozen")
+    TestClient(app).post("/v1/chat/completions", json=REQUEST)
+    # An unmatched request must not write a blob (disk-fill guard).
+    assert glob.glob(str(tmp_path / "**" / "*.zst"), recursive=True) == []

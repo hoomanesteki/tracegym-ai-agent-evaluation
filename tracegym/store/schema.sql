@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS fixtures (
     fn_name     TEXT NOT NULL,
     input_sha   TEXT NOT NULL,
     output_sha  TEXT NOT NULL,
+    latency_ms  REAL NOT NULL DEFAULT 0,    -- recorded call latency, replayed in frozen mode
     created_at  TEXT NOT NULL
 );
 
@@ -134,7 +135,7 @@ CREATE TABLE IF NOT EXISTS judgments (
     pass        INTEGER,                    -- 0/1
     rationale   TEXT,
     created_at  TEXT NOT NULL,
-    UNIQUE (case_id, output_sha, rubric_sha, model)
+    UNIQUE (case_id, output_sha, rubric_sha, provider, model)
 );
 
 -- Human labels for judge calibration. round distinguishes intra-rater relabels.
