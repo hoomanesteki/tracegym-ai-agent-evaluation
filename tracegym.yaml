@@ -1,0 +1,43 @@
+# TraceGym project configuration.
+# The CLI reads this file from the working directory. Everything here is data,
+# not code: change a threshold or a judge model without touching Python.
+schema_version: 1
+
+otel:
+  # The GenAI semantic conventions live in their own repo and are still
+  # Development status, so we pin the version we target. Spans emit
+  # gen_ai.provider.name (not the deprecated gen_ai.system).
+  semconv_genai_version: "1.42.0"
+
+demo_agents:
+  # The two bundled agents run on a small, cheap model. Their family (Llama) is
+  # deliberately different from the judge family (Gemini) so a judge never grades
+  # its own relatives.
+  provider: groq
+  model: llama-3.1-8b-instant
+
+judges:
+  # Primary and secondary are cross-family (Gemini). The tiebreaker is only
+  # called when the two primaries disagree, and its verdict is also logged as a
+  # family-bias probe.
+  primary:    { provider: gemini, model: gemini-2.5-flash }
+  secondary:  { provider: gemini, model: gemini-2.5-flash-lite }
+  tiebreaker: { provider: groq,   model: llama-3.3-70b-versatile }
+  pass_threshold: 0.6   # judge score in [0, 1]; >= threshold counts as pass
+  max_retries: 2
+
+gate:
+  # A regression blocks the merge when any of these fire against the promoted
+  # baseline. See tracegym/gate for the exact predicate.
+  bootstrap_samples: 10000
+  delta_block: -0.15          # mean per-case score drop that counts as a regression
+  ci_must_exclude_zero: true  # ...only if the 95% bootstrap CI stays below zero
+  cost_regression_pct: 50     # also block if per-run cost rises beyond this percent
+  block_on_l1_invariant_regression: true  # any new deterministic-invariant failure blocks
+
+paths:
+  db: "runs/traces.db"
+  blobs: "runs/blobs"
+  suites: "suites/golden"
+  prices: "configs/prices.yaml"
+  limits: "limits.yaml"

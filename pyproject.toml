@@ -1,0 +1,83 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tracegym"
+version = "0.1.0"
+description = "Record, replay, and regression-test AI agents. Deterministic trace replay, calibrated LLM-as-judge evals, and CI gates, OpenTelemetry-native, at $0."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Hooman Esteki" }]
+keywords = [
+    "llm-evaluation",
+    "ai-agents",
+    "opentelemetry",
+    "llm-as-a-judge",
+    "regression-testing",
+    "tracing",
+    "ci-cd",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Base deps are everything the keyless `tg demo` needs: store, checks, gate, report, CLI.
+# Heavier or network-only pieces live behind extras so `uvx tracegym demo` stays lean.
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.7",
+    "pyyaml>=6.0",
+    "numpy>=1.26",
+    "jinja2>=3.1",
+    "jsonschema>=4.20",
+    "sqlglot>=25.0",
+    "zstandard>=0.22",
+    "opentelemetry-api>=1.24",
+    "opentelemetry-sdk>=1.24",
+]
+
+[project.optional-dependencies]
+# Recording live traffic through the OpenAI-compatible proxy.
+proxy = ["fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+# LLM judges. Groq works today; Gemini is the cross-family calibration path.
+judges = ["httpx>=0.27", "groq>=0.11", "google-genai>=0.3"]
+# Optional local experiment tracking for eval runs.
+mlflow = ["mlflow>=2.14"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+all = ["tracegym[proxy,judges,mlflow]"]
+
+[project.scripts]
+tg = "tracegym.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/hoomanesteki/tracegym-ai-agent-evaluation"
+Repository = "https://github.com/hoomanesteki/tracegym-ai-agent-evaluation"
+Documentation = "https://hoomanesteki.github.io/tracegym-ai-agent-evaluation/"
+
+[tool.hatch.build.targets.wheel]
+# Bundles the whole package tree, including non-Python data: schema.sql, the
+# Jinja report templates, and the zero-key demo assets under _demodata.
+packages = ["tracegym"]
+
+[tool.hatch.build.targets.sdist]
+include = ["tracegym", "tests", "README.md", "LICENSE"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
