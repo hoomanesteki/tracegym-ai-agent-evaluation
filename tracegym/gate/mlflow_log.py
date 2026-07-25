@@ -2,8 +2,9 @@
 
 Off by default and guarded: if MLflow is not installed or not requested, this is a
 no-op and the keyless demo is untouched. When enabled it logs each run's gate
-result and scorecard to a local file-based tracking store, turning eval runs into
-tracked experiments you can compare over time.
+result and scorecard to a local SQLite tracking store, turning eval runs into
+tracked experiments you can compare over time. SQLite is the backend recent MLflow
+recommends; the file store is deprecated.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ def log_run(
     run_id: str,
     *,
     scorecard: dict | None = None,
-    tracking_uri: str = "file:./mlruns",
+    tracking_uri: str = "sqlite:///mlflow.db",
     experiment: str = "tracegym",
 ) -> bool:
     """Log one gated run to MLflow. Returns False (no-op) if MLflow is unavailable."""
