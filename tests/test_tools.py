@@ -100,6 +100,64 @@ def test_positional_args_are_rejected(tmp_path):
         f(1)
 
 
+def test_tool_latency_is_recorded_and_replayed_from_fixture(tmp_path):
+    conn = connect()
+
+    @Runtime(conn, tmp_path, mode="live").tool
+    def f(x):
+        return {"x": x}
+
+    f(x=1)
+    recorded = conn.execute("SELECT latency_ms FROM fixtures WHERE fn_name = 'f'").fetchone()[
+        "latency_ms"
+    ]
+
+    @Runtime(conn, tmp_path, mode="frozen_strict").tool
+    def f(x):  # noqa: F811
+        return {"x": x}
+
+    f(x=1)
+    span = conn.execute(
+        "SELECT attributes FROM spans WHERE kind='tool' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    # Frozen replay reports the recorded latency, not the (near-zero) replay timing.
+    assert json.loads(span["attributes"])["tracegym.latency_ms"] == recorded
+
+
+def test_live_output_is_json_normalized_like_frozen(tmp_path):
+    conn = connect()
+
+    @Runtime(conn, tmp_path, mode="live").tool
+    def coords(x):
+        return (1, 2)  # a tuple
+
+    out = coords(x=1)
+    # Live returns the same JSON-normalized object frozen replay would (list, not tuple).
+    assert out == [1, 2]
+    assert isinstance(out, list)
+
+
+def test_scrubbed_key_replays_across_a_changed_timestamp(tmp_path):
+    conn = connect()
+
+    @Runtime(conn, tmp_path, mode="live").tool
+    def note(text):
+        return {"echo": text}
+
+    note(text="run at 2026-07-25T10:00:00Z now")
+
+    frozen = Runtime(conn, tmp_path, mode="frozen_strict")
+
+    @frozen.tool
+    def note(text):  # noqa: F811
+        return {"echo": text}
+
+    # A different timestamp scrubs to the same key, so the fixture still hits.
+    out = note(text="run at 2026-07-25T11:30:00Z now")
+    assert out == {"echo": "run at 2026-07-25T10:00:00Z now"}
+    assert frozen.live_calls == 0
+
+
 def test_chat_frozen_replays_with_recorded_usage_and_cost(tmp_path):
     conn = connect()
     live = Runtime(conn, tmp_path, mode="live", provider="local")

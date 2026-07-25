@@ -47,6 +47,16 @@ def test_pragma_fails():
     assert not _one({"output": {"sql": "PRAGMA table_info(t)"}}, {"type": "sql_select_only"}).passed
 
 
+def test_attach_with_subquery_is_rejected():
+    # A subquery filename must not sneak ATTACH past the guard as "contains a SELECT".
+    sql = "ATTACH DATABASE (SELECT '/tmp/evil.db') AS y"
+    assert not _one({"output": {"sql": sql}}, {"type": "sql_select_only"}).passed
+
+
+def test_union_of_selects_is_allowed():
+    assert _one({"output": {"sql": "SELECT 1 UNION SELECT 2"}}, {"type": "sql_select_only"}).passed
+
+
 # -- schema and matchers ------------------------------------------------------
 
 

@@ -38,6 +38,14 @@ def _request_key(body: dict) -> str:
     return sha256_hex(b"proxy:" + canonical_json(normalized))
 
 
+def _wants_stream(body: dict) -> bool:
+    """True only for a genuine streaming request, not the string 'false'."""
+    stream = body.get("stream", False)
+    if isinstance(stream, str):
+        return stream.strip().lower() in {"true", "1", "yes"}
+    return bool(stream)
+
+
 def create_app(
     conn,
     blob_root: str | Path,
@@ -63,22 +71,30 @@ def create_app(
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request):
-        body = await request.json()
-        if body.get("stream"):
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
+        if not isinstance(body, dict):
+            return JSONResponse(
+                status_code=400, content={"error": "request body must be a JSON object"}
+            )
+        if _wants_stream(body):
             return JSONResponse(status_code=400, content=STREAM_REJECTED)
 
         key = _request_key(body)
         model = body.get("model", "unknown")
-        input_sha = put(blob_root, body)
-
         row = conn.execute("SELECT output_sha FROM fixtures WHERE key = ?", (key,)).fetchone()
 
         if mode == "frozen":
             if row is None:
+                # Do not persist an input blob for an unmatched request: an
+                # unauthenticated client could otherwise fill the disk on 424s.
                 return JSONResponse(
                     status_code=424,
                     content={"error": f"no fixture for this request (key={key[:12]})"},
                 )
+            input_sha = put(blob_root, body)
             data = get(blob_root, row["output_sha"])
             _record(conn, blob_root, key, model, input_sha, row["output_sha"], data, prices, seq)
             return JSONResponse(status_code=200, content=data)
@@ -91,6 +107,7 @@ def create_app(
                 status_code=500,
                 content={"error": "TG_UPSTREAM_BASE_URL is not set for live mode"},
             )
+        input_sha = put(blob_root, body)
         headers = {
             k: v
             for k, v in request.headers.items()

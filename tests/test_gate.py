@@ -51,6 +51,13 @@ def test_mean_drop_with_wide_ci_does_not_block():
     assert r.verdict == "PASS"
 
 
+def test_single_case_drop_does_not_block_on_ci():
+    # n=1 has no statistical power; the degenerate zero-width CI must not block.
+    r = gate_verdict(_scores([("c1", 0.0)]), _scores([("c1", 1.0)]), cfg=CFG)
+    assert r.verdict == "PASS"
+    assert r.mean_delta == -1.0
+
+
 def test_cost_regression_blocks():
     s = _scores([("c1", 0.9)])
     r = gate_verdict(s, s, cand_cost=1.6, base_cost=1.0, cfg=CFG)
@@ -66,7 +73,10 @@ def test_gate_is_deterministic():
     assert (a.ci_low, a.ci_high) == (b.ci_low, b.ci_high)
 
 
-CASES = [{"id": "c1", "input": {}, "checks": [{"type": "contains", "value": "ok"}]}]
+# Several cases so the CI-based signal has enough samples to be meaningful.
+CASES = [
+    {"id": f"c{i}", "input": {}, "checks": [{"type": "contains", "value": "ok"}]} for i in range(4)
+]
 
 
 def _good_agent(rt, case):

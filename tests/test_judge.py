@@ -63,6 +63,41 @@ def test_parse_failure_routes_to_review():
     assert any(not vote.parse_ok for vote in v.votes)
 
 
+def test_parse_failure_does_not_deflate_the_score():
+    conn = connect()
+
+    def boom(case, output, rubric, model, threshold=0.6):
+        raise ValueError("bad json")
+
+    providers = {"ok": _provider(True, 0.9), "boom": boom}
+    roster = {"primary": ("ok", "m1"), "secondary": ("boom", "m2")}
+    v = judge_case(conn, CASE, {"answer": "x"}, "sha5", RUBRIC, roster, providers=providers)
+    # The surviving judge scored 0.9; a failed parse must not average it down to 0.45.
+    assert v.score == 0.9
+
+
+def test_same_model_different_provider_do_not_collapse():
+    conn = connect()
+    calls: list[str] = []
+
+    def prov(passed, name):
+        def fn(case, output, rubric, model, threshold=0.6):
+            calls.append(name)
+            return {
+                "scores": {"quality": 0.9 if passed else 0.2},
+                "pass": passed,
+                "rationale": name,
+            }
+
+        return fn
+
+    providers = {"a": prov(True, "a"), "b": prov(False, "b"), "t": prov(True, "t")}
+    roster = {"primary": ("a", "shared"), "secondary": ("b", "shared"), "tiebreaker": ("t", "tb")}
+    judge_case(conn, CASE, {"answer": "x"}, "sha6", RUBRIC, roster, providers=providers)
+    # Both providers ran despite sharing the model name; the ensemble did not collapse.
+    assert "a" in calls and "b" in calls
+
+
 def _agent(rt, case):
     @rt.tool
     def retrieve(query):

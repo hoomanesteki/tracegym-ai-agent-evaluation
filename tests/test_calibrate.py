@@ -51,3 +51,21 @@ def test_calibrate_matches_labels_to_cached_judgments():
     assert report["n"] == 3
     assert report["coverage"] == 1.0
     assert report["confusion"]["fp"] == 1  # o3: judge says pass, human says fail
+
+
+def test_all_pass_labels_do_not_promote_judge_to_gating():
+    conn = connect()
+    # 20 outputs, judge and human all say pass: kappa is 1.0 by construction.
+    for i in range(20):
+        out = f"o{i}"
+        for model in ("m1", "m2"):
+            conn.execute(
+                "INSERT INTO judgments (id, case_id, output_sha, rubric_sha, provider, model, pass, created_at) "
+                "VALUES (?, ?, ?, 'r', 'local', ?, 1, '2026-01-01')",
+                (f"j-{out}-{model}", f"c-{out}", out, model),
+            )
+        add_label(conn, f"c-{out}", out, True, labeler="me")
+    report = calibrate_from_db(conn, min_labels=1)
+    assert report["cohen_kappa"] == 1.0
+    assert report["labels_per_class"]["fail"] == 0
+    assert report["gate_mode"] == "l1_only"  # never tested against a failure, so advisory only

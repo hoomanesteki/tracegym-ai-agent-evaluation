@@ -68,10 +68,15 @@ def gate_verdict(
         reasons.append(f"{new_invariant_fails} new invariant failure(s)")
 
     ci_excludes_zero = ci_high < 0 or ci_low > 0
-    if mean_delta < cfg.delta_block and (ci_excludes_zero or not cfg.ci_must_exclude_zero):
+    enough_cases = len(shared) >= cfg.min_cases_for_ci
+    if (
+        enough_cases
+        and mean_delta < cfg.delta_block
+        and (ci_excludes_zero or not cfg.ci_must_exclude_zero)
+    ):
         reasons.append(
             f"mean score delta {mean_delta:+.3f} < {cfg.delta_block} "
-            f"(95% CI [{ci_low:+.3f}, {ci_high:+.3f}])"
+            f"(95% CI [{ci_low:+.3f}, {ci_high:+.3f}], n={len(shared)})"
         )
 
     if cost_delta_pct > cfg.cost_regression_pct:
