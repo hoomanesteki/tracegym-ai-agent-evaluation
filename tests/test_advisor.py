@@ -2,10 +2,70 @@
 
 from __future__ import annotations
 
+import json
+
 from tracegym.advisor import advise, build_profile, store_recommendations
+from tracegym.advisor.rules import rule_drop_secondary_judge, rule_duplicate_llm
 from tracegym.judge import judge_run
 from tracegym.replay import run_suite
 from tracegym.store import connect
+
+
+def _seed_run(conn, run_id="run1", trace_id="tr1"):
+    conn.execute(
+        "INSERT INTO runs (id, suite_id, mode, created_at) VALUES (?, 's', 'frozen', 't')",
+        (run_id,),
+    )
+    conn.execute(
+        "INSERT INTO results (id, run_id, case_id, trace_id, output_sha, cost_usd, created_at) "
+        "VALUES ('res1', ?, 'c1', ?, 'o1', 0.02, 't')",
+        (run_id, trace_id),
+    )
+
+
+def test_r2_is_advisory_when_identical_inputs_gave_different_outputs():
+    conn = connect()
+    _seed_run(conn)
+    for i, osha in enumerate(["oA", "oB"]):
+        conn.execute(
+            "INSERT INTO spans (id, trace_id, kind, name, input_sha, output_sha, start_ns, end_ns, attributes) "
+            "VALUES (?, 'tr1', 'llm', 'chat', 'SAME', ?, 0, 1, ?)",
+            (f"sp{i}", osha, json.dumps({"tracegym.cost_usd": 0.01})),
+        )
+    rec = rule_duplicate_llm(conn, "run1")[0]
+    assert rec.status == "ADVISORY_ONLY"  # not byte-identical, so not proven safe
+
+
+def test_r4_is_advisory_when_secondary_is_decisive():
+    conn = connect()
+    _seed_run(conn)
+    # primary fail, secondary pass: a 1-1 split the production ensemble breaks by score.
+    conn.execute(
+        "INSERT INTO judgments (id, case_id, output_sha, rubric_sha, provider, model, pass, created_at) "
+        "VALUES ('j1', 'c1', 'o1', 'r', 'pa', 'ma', 0, 't1')"
+    )
+    conn.execute(
+        "INSERT INTO judgments (id, case_id, output_sha, rubric_sha, provider, model, pass, created_at) "
+        "VALUES ('j2', 'c1', 'o1', 'r', 'pb', 'mb', 1, 't2')"
+    )
+    rec = rule_drop_secondary_judge(conn, "run1", {"secondary": ("pb", "mb")})[0]
+    assert rec.status == "ADVISORY_ONLY"
+
+
+def test_r4_is_safe_when_judges_are_unanimous():
+    conn = connect()
+    _seed_run(conn)
+    conn.execute(
+        "INSERT INTO judgments (id, case_id, output_sha, rubric_sha, provider, model, pass, created_at) "
+        "VALUES ('j1', 'c1', 'o1', 'r', 'pa', 'ma', 1, 't1')"
+    )
+    conn.execute(
+        "INSERT INTO judgments (id, case_id, output_sha, rubric_sha, provider, model, pass, created_at) "
+        "VALUES ('j2', 'c1', 'o1', 'r', 'pb', 'mb', 1, 't2')"
+    )
+    rec = rule_drop_secondary_judge(conn, "run1", {"secondary": ("pb", "mb")})[0]
+    assert rec.status == "SAFE"
+
 
 RUBRIC = {"criteria": [{"id": "quality"}]}
 CASES = [{"id": "c1", "input": {"q": "hi"}, "checks": []}]
@@ -64,7 +124,7 @@ def test_drop_secondary_judge_is_safe_when_no_flips(tmp_path):
     judge_run(conn, tmp_path, rid, {c["id"]: c for c in CASES}, RUBRIC, roster, providers=providers)
     recs = {r.rule_id: r for r in advise(conn, rid, roster=roster)}
     assert recs["R4"].status == "SAFE"
-    assert recs["R4"].evidence["flips"] == 0
+    assert recs["R4"].evidence["not_provable"] == 0
 
 
 def test_recommendations_persist(tmp_path):

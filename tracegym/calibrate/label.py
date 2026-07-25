@@ -52,10 +52,21 @@ def add_label(
 
 
 def _ensemble_pass(conn, output_sha: str) -> int | None:
-    """Majority pass across cached judgments for an output, or None if unjudged."""
-    rows = conn.execute("SELECT pass FROM judgments WHERE output_sha = ?", (output_sha,)).fetchall()
-    if not rows:
+    """Majority pass across the most recently judged rubric for an output.
+
+    Scoped to a single rubric_sha (the latest) so re-judging under an evolved
+    rubric does not pool stale cross-rubric votes into the calibration label.
+    """
+    latest = conn.execute(
+        "SELECT rubric_sha FROM judgments WHERE output_sha = ? ORDER BY created_at DESC LIMIT 1",
+        (output_sha,),
+    ).fetchone()
+    if latest is None:
         return None
+    rows = conn.execute(
+        "SELECT pass FROM judgments WHERE output_sha = ? AND rubric_sha = ?",
+        (output_sha, latest["rubric_sha"]),
+    ).fetchall()
     yes = sum(r["pass"] for r in rows)
     return 1 if yes > (len(rows) - yes) else 0
 
@@ -107,7 +118,15 @@ def calibrate_from_db(
     report["labeled"] = total
     report["coverage"] = round(len(human) / total, 4) if total else 0.0
 
-    if len(human) < min_labels or report["cohen_kappa"] < 0.55:
+    # A judge cannot be trusted to gate if it was never tested against both a
+    # passing and a failing example. Under the pass-heavy class balance an
+    # all-pass label set yields kappa=1.0 by construction, so require both classes.
+    n_pass = sum(human)
+    n_fail = len(human) - n_pass
+    report["labels_per_class"] = {"pass": n_pass, "fail": n_fail}
+    both_classes = n_pass > 0 and n_fail > 0
+
+    if len(human) < min_labels or not both_classes or report["cohen_kappa"] < 0.55:
         report["gate_mode"] = "l1_only"
     elif report["cohen_kappa"] < 0.70:
         report["gate_mode"] = "agreement_subset"

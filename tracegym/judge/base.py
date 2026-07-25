@@ -59,11 +59,11 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _cached_vote(conn, case_id, output_sha, rsha, model) -> Vote | None:
+def _cached_vote(conn, case_id, output_sha, rsha, provider, model) -> Vote | None:
     row = conn.execute(
         "SELECT provider, model, scores, pass, rationale FROM judgments "
-        "WHERE case_id=? AND output_sha=? AND rubric_sha=? AND model=?",
-        (case_id, output_sha, rsha, model),
+        "WHERE case_id=? AND output_sha=? AND rubric_sha=? AND provider=? AND model=?",
+        (case_id, output_sha, rsha, provider, model),
     ).fetchone()
     if row is None:
         return None
@@ -103,7 +103,7 @@ def _judge_one(
 ) -> Vote:
     provider_name, model = role
     if use_cache:
-        cached = _cached_vote(conn, case["id"], output_sha, rsha, model)
+        cached = _cached_vote(conn, case["id"], output_sha, rsha, provider_name, model)
         if cached is not None:
             return cached
     fn = providers[provider_name]
@@ -157,16 +157,24 @@ def judge_case(
     if "tiebreaker" in roster and (disagreed or gap >= DISAGREE_SCORE_GAP):
         votes.append(run("tiebreaker"))
 
-    mean_score = sum(v.mean for v in votes) / len(votes)
-    yes = sum(1 for v in votes if v.passed)
-    no = len(votes) - yes
-    passed = yes > no if yes != no else mean_score >= threshold
-    agreeing = yes if passed else no
-    confidence = round(agreeing / len(votes), 4)
+    # Only votes that actually parsed contribute to the score and the tally; a
+    # parse-failed judge must not be counted as a 0 and manufacture a regression.
+    valid = [v for v in votes if v.parse_ok]
+    if valid:
+        mean_score = sum(v.mean for v in valid) / len(valid)
+        yes = sum(1 for v in valid if v.passed)
+        no = len(valid) - yes
+        passed = yes > no if yes != no else mean_score >= threshold
+        confidence = round((yes if passed else no) / len(valid), 4)
+    else:
+        # No judge could score: stay neutral rather than deflate to zero.
+        mean_score = threshold
+        passed = False
+        confidence = 0.0
 
     parse_failed = any(not v.parse_ok for v in votes)
     on_the_fence = abs(mean_score - threshold) < REVIEW_MARGIN
-    needs_review = disagreed or parse_failed or on_the_fence or confidence < 0.67
+    needs_review = disagreed or parse_failed or on_the_fence or confidence < 0.67 or not valid
 
     state = "NEEDS_REVIEW" if needs_review else ("PASS" if passed else "FAIL")
     rationale = next((v.rationale for v in votes if v.passed == passed and v.parse_ok), "")

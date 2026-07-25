@@ -27,6 +27,10 @@ class GateConfig:
     ci_must_exclude_zero: bool = True
     cost_regression_pct: float = 50.0
     block_on_l1_invariant_regression: bool = True
+    # The CI-based quality-drop signal needs at least this many shared cases; below
+    # it the bootstrap has no power (a single case gives a degenerate zero-width CI),
+    # so only the invariant and cost signals can block.
+    min_cases_for_ci: int = 3
 
 
 @dataclass(frozen=True)
@@ -78,6 +82,7 @@ def load_config(path: str | Path = "tracegym.yaml") -> Config:
         ci_must_exclude_zero=g.get("ci_must_exclude_zero", True),
         cost_regression_pct=g.get("cost_regression_pct", 50.0),
         block_on_l1_invariant_regression=g.get("block_on_l1_invariant_regression", True),
+        min_cases_for_ci=g.get("min_cases_for_ci", 3),
     )
     a = raw.get("advisor", {})
     advisor = AdvisorConfig(

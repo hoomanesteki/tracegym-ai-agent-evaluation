@@ -89,53 +89,80 @@ def rule_duplicate_llm(conn, run_id: str) -> list[Recommendation]:
         "SELECT COALESCE(SUM(cost_usd), 0) FROM results WHERE run_id = ?", (run_id,)
     ).fetchone()[0]
     pct = round(reclaimable_usd / total_cost * 100, 2) if total_cost else 0.0
+    # Only SAFE when every repeated call produced an identical output. A group whose
+    # identical inputs yielded different outputs (nondeterministic sampling, a retry)
+    # cannot be memoized without changing an answer, so it is advisory, not proven.
+    all_pure = all(g["distinct_out"] == 1 for g in groups)
+    detail = f"identical LLM calls repeat within traces; caching reclaims ${reclaimable_usd:.6f}"
+    if not all_pure:
+        detail += " (some repeats returned different outputs; verify determinism first)"
     return [
         Recommendation(
             "R2",
             "Memoize duplicate LLM calls",
-            "SAFE",
+            "SAFE" if all_pure else "ADVISORY_ONLY",
             est_saving_usd=round(reclaimable_usd, 8),
             est_saving_pct=pct,
-            detail=f"identical LLM calls repeat within traces; caching reclaims ${reclaimable_usd:.6f}",
-            evidence={"groups": len(groups)},
+            detail=detail,
+            evidence={"groups": len(groups), "all_identical": all_pure},
         )
     ]
 
 
-def _ensemble_pass(votes: list[int]) -> int:
+def _majority(votes: list[int]) -> int | None:
+    """1/0 for a decided majority, or None for a tie (ambiguous under any rule)."""
     yes = sum(votes)
-    return 1 if yes > (len(votes) - yes) else 0
+    no = len(votes) - yes
+    if yes == no:
+        return None
+    return 1 if yes > no else 0
 
 
 def rule_drop_secondary_judge(conn, run_id: str, roster: dict) -> list[Recommendation]:
-    """R4: drop the secondary judge if it never changes a final verdict.
+    """R4: drop the secondary judge only if it provably never decides a verdict.
 
-    Validated by verdict agreement from cached judgments only (no score gate, which
-    would be circular for a judge change). SAFE iff zero final verdicts flip.
+    Validated by verdict agreement from cached judgments (no score gate, which would
+    be circular for a judge change). A recommendation is SAFE only if, for every
+    output, removing the secondary leaves the same decided majority. A tie (which
+    the production ensemble breaks by score, a signal we do not have here) or a flip
+    is treated as not-provable, so it is advisory rather than a fake SAFE. Votes are
+    scoped to the output's most recent rubric so stale cross-rubric votes never leak.
     """
     if "secondary" not in roster:
         return []
-    secondary_model = roster["secondary"][1]
+    secondary_provider, secondary_model = roster["secondary"]
     output_shas = [
         r["output_sha"]
         for r in conn.execute(
             "SELECT DISTINCT output_sha FROM results WHERE run_id = ?", (run_id,)
         ).fetchall()
     ]
-    flips = 0
     covered = 0
+    unsafe = 0  # outputs where dropping the secondary is not provably harmless
     for osha in output_shas:
+        latest = conn.execute(
+            "SELECT rubric_sha FROM judgments WHERE output_sha = ? ORDER BY created_at DESC LIMIT 1",
+            (osha,),
+        ).fetchone()
+        if latest is None:
+            continue
         rows = conn.execute(
-            "SELECT model, pass FROM judgments WHERE output_sha = ?", (osha,)
+            "SELECT provider, model, pass FROM judgments WHERE output_sha = ? AND rubric_sha = ?",
+            (osha, latest["rubric_sha"]),
         ).fetchall()
         if not rows:
             continue
         covered += 1
-        full = _ensemble_pass([r["pass"] for r in rows])
-        reduced_votes = [r["pass"] for r in rows if r["model"] != secondary_model]
-        reduced = _ensemble_pass(reduced_votes) if reduced_votes else full
-        if full != reduced:
-            flips += 1
+        full = _majority([r["pass"] for r in rows])
+        reduced_votes = [
+            r["pass"]
+            for r in rows
+            if not (r["provider"] == secondary_provider and r["model"] == secondary_model)
+        ]
+        reduced = _majority(reduced_votes) if reduced_votes else full
+        if full is None or reduced is None or full != reduced:
+            unsafe += 1
+
     if covered == 0:
         return [
             Recommendation(
@@ -145,11 +172,12 @@ def rule_drop_secondary_judge(conn, run_id: str, roster: dict) -> list[Recommend
                 detail="no cached judgments for this run; run the judge first",
             )
         ]
-    status = "SAFE" if flips == 0 else "REGRESSES"
+    status = "SAFE" if unsafe == 0 else "ADVISORY_ONLY"
     detail = (
-        f"secondary judge changed {flips}/{covered} final verdicts"
-        if flips
-        else f"secondary judge never changed a verdict across {covered} outputs; it can be dropped"
+        f"secondary judge was decisive or ambiguous on {unsafe}/{covered} outputs; "
+        "re-judge to validate before dropping"
+        if unsafe
+        else f"secondary judge never decided a verdict across {covered} outputs; safe to drop"
     )
     return [
         Recommendation(
@@ -157,7 +185,7 @@ def rule_drop_secondary_judge(conn, run_id: str, roster: dict) -> list[Recommend
             "Drop the secondary judge",
             status,
             detail=detail,
-            evidence={"covered": covered, "flips": flips},
+            evidence={"covered": covered, "not_provable": unsafe},
         )
     ]
 
