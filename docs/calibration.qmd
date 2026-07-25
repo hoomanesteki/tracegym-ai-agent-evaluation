@@ -41,8 +41,9 @@ checks, rather than blocking a merge on missing evidence. Nothing is fabricated.
 **On the demo's numbers.** The bundled demo runs at $0 with a deterministic local
 judge and calibrates against a small set of canary golds, an illustrative drift
 check. A real Cohen's κ needs your human labels against a live cross-family
-judge: run `tg label` to label a stratified sample, then `tg calibrate`. The
-harness ships the protocol; the honest number is yours to produce.
+judge: label a stratified sample with the calibration API (`stratified_sample`
+then `add_label`), then `tg calibrate`. The harness ships the protocol; the
+honest number is yours to produce.
 :::
 
 ## Drift canaries

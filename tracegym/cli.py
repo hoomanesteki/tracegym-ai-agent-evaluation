@@ -227,7 +227,8 @@ def record(
         from tracegym.capture.proxy import create_app
         from tracegym.store import connect
     except ImportError:
-        console.print('The proxy needs the extra: pip install "tracegym[proxy]"')
+        # markup=False so Rich does not read the "[proxy]" extra as a style tag.
+        console.print('The proxy needs the extra: pip install "tracegym[proxy]"', markup=False)
         raise typer.Exit(1) from None
 
     db.parent.mkdir(parents=True, exist_ok=True)
