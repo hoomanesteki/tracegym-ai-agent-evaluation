@@ -138,8 +138,29 @@ def _loop(bundle: dict) -> dict:
         "determinism_pct": bundle.get("determinism", {}).get("pct", 0),
         "gate_verdict": bundle["gate_demo"]["verdict"],
         "needs_review": bundle.get("needs_review", 0),
+        "review_open": len(bundle.get("review", [])),
         "n_safe": sum(1 for r in recs if r.get("status") == "SAFE"),
     }
+
+
+_KIND_LABEL = {
+    "needs_review": "judge review",
+    "gate_warn": "gate warning",
+    "drift": "drift alert",
+}
+
+
+def _review_view(items: list[dict]) -> list[dict]:
+    return [
+        {
+            "id": it["id"],
+            "kind": _KIND_LABEL.get(it["kind"], it["kind"]),
+            "severity": it.get("severity") or "med",
+            "ref": it.get("ref_id") or "",
+            "reason": it.get("reason") or "",
+        }
+        for it in (items or [])
+    ]
 
 
 def build_context(bundle: dict, title: str) -> dict:
@@ -169,6 +190,7 @@ def build_context(bundle: dict, title: str) -> dict:
         },
         "trends": _trends(bundle.get("history", {})),
         "loop": _loop(bundle),
+        "review": _review_view(bundle.get("review", [])),
     }
 
 

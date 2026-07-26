@@ -190,14 +190,20 @@ def gate(
         responder=responder,
     )
     result = gate_runs(conn, buggy, baselines[suite])
-    color = "red" if result.blocked else "green"
+    color = {"BLOCK": "red", "WARN": "yellow", "PASS": "green"}[result.verdict]
     console.print(
         Panel(
-            "; ".join(result.reasons) or "no regression",
+            "; ".join(result.reasons or result.warnings) or "no regression",
             title=f"[{color}]{result.verdict}[/{color}]",
             border_style=color,
         )
     )
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        # Tiered annotations: BLOCK reasons fail the check, WARN warnings do not.
+        for reason in result.reasons:
+            print(f"::error title=TraceGym gate::{reason}")
+        for warn in result.warnings:
+            print(f"::warning title=TraceGym gate::{warn}")
     raise typer.Exit(1 if result.blocked else 0)
 
 
@@ -209,6 +215,58 @@ def calibrate(workspace: Path = typer.Option(DEMO_DIR)) -> None:
     conn, _ = _with_workspace(workspace)
     rep = calibrate_from_db(conn, labeler="canary-gold", min_labels=1)
     console.print_json(json.dumps(rep))
+
+
+@app.command()
+def review(
+    action: str = typer.Argument("list", help="list | ack | resolve"),
+    item_id: str = typer.Argument(None, help="review item id, for ack/resolve"),
+    workspace: Path = typer.Option(DEMO_DIR),
+    label: str = typer.Option(
+        None, help="pass|fail: records a human label when resolving a needs_review item"
+    ),
+) -> None:
+    """Show or clear the human-notify queue (the control loop's soft, no-block tier)."""
+    from tracegym import review as rq
+
+    conn, _ = _with_workspace(workspace)
+    if action == "list":
+        items = rq.list_open(conn)
+        if not items:
+            console.print("Review queue is empty. Nothing needs a human right now.")
+            raise typer.Exit(0)
+        table = Table("id", "kind", "severity", "ref", "reason")
+        for it in items:
+            table.add_row(
+                it["id"],
+                it["kind"],
+                it.get("severity") or "",
+                it.get("ref_id") or "",
+                it.get("reason") or "",
+            )
+        console.print(table)
+        return
+    if not item_id:
+        console.print("Provide an item id, for example: tg review resolve rv-... --label pass")
+        raise typer.Exit(1)
+    if action == "ack":
+        console.print("Acknowledged." if rq.ack(conn, item_id) else "No such open item.")
+        return
+    if action == "resolve":
+        label_pass = None
+        if label is not None:
+            if label not in ("pass", "fail"):
+                console.print("--label must be pass or fail")
+                raise typer.Exit(1)
+            label_pass = label == "pass"
+        ok = rq.resolve(conn, item_id, label_pass=label_pass)
+        if ok and label_pass is not None:
+            console.print("Resolved and recorded a human label; calibration will pick it up.")
+        else:
+            console.print("Resolved." if ok else "No such item.")
+        return
+    console.print(f"Unknown action {action!r}. Use: list | ack | resolve.")
+    raise typer.Exit(1)
 
 
 _SPARK = "▁▂▃▄▅▆▇█"

@@ -168,6 +168,25 @@ CREATE TABLE IF NOT EXISTS recommendations (
 );
 CREATE INDEX IF NOT EXISTS idx_reco_run ON recommendations (run_id);
 
+-- The human-notify tier of the control loop: items a person should look at
+-- (a judge NEEDS_REVIEW case, a gate WARN, a drift alert). Resolving a
+-- needs_review item writes a human label, which feeds calibration.
+CREATE TABLE IF NOT EXISTS review_queue (
+    id          TEXT PRIMARY KEY,
+    run_id      TEXT,
+    kind        TEXT NOT NULL,              -- needs_review | gate_warn | drift
+    ref_id      TEXT,
+    case_id     TEXT,
+    output_sha  TEXT,
+    tier        TEXT NOT NULL DEFAULT 'human-notify',
+    severity    TEXT,                       -- low | med | high
+    reason      TEXT,
+    status      TEXT NOT NULL DEFAULT 'open',  -- open | ack | resolved
+    created_at  TEXT NOT NULL,
+    resolved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_review_status ON review_queue (status);
+
 -- Promoted baselines the gate compares against. name is usually "baseline".
 CREATE TABLE IF NOT EXISTS baselines (
     name        TEXT PRIMARY KEY,

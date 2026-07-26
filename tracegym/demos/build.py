@@ -270,6 +270,29 @@ def _seed_history(conn) -> None:
     conn.commit()
 
 
+def _seed_review_items(conn) -> None:
+    """Two illustrative human-notify items so the demo's review queue is not empty."""
+    from tracegym.review import enqueue
+
+    enqueue(
+        conn,
+        run_id="hist-sql-analyst-03",
+        kind="gate_warn",
+        severity="med",
+        ref_id="cost-drift",
+        reason="illustrative: cost drifted +31% on a past run (soft band), routed to a human",
+    )
+    enqueue(
+        conn,
+        run_id="hist-support-rag-02",
+        kind="needs_review",
+        severity="low",
+        ref_id="sr-011",
+        reason="illustrative: the two judges split on a borderline answer",
+    )
+    conn.commit()
+
+
 def _seed_canary_calibration(conn, blob_root, base_run: str, spec: dict) -> None:
     """Judge each canary and record its gold verdict as a label.
 
@@ -361,6 +384,7 @@ def build_demodata(dest: str | Path) -> dict:
             promote(conn, f"baseline-{sid}", sid, base_run)
             spec["baseline_run"] = base_run
         _seed_history(conn)
+        _seed_review_items(conn)
         conn.commit()
         conn.close()
     finally:

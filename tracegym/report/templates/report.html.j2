@@ -40,8 +40,13 @@
     border-radius:999px; }
   .chip.good,.chip.PASS,.chip.SAFE { background:color-mix(in srgb,var(--good) 15%,transparent); color:var(--good); }
   .chip.bad,.chip.BLOCK,.chip.REGRESSES { background:color-mix(in srgb,var(--bad) 15%,transparent); color:var(--bad); }
-  .chip.INCONCLUSIVE { background:color-mix(in srgb,var(--warn) 15%,transparent); color:var(--warn); }
+  .chip.INCONCLUSIVE,.chip.WARN { background:color-mix(in srgb,var(--warn) 15%,transparent); color:var(--warn); }
   .chip.ADVISORY_ONLY { background:color-mix(in srgb,var(--grey) 18%,transparent); color:var(--grey); }
+  .sev { display:inline-block; font-size:11px; font-weight:650; text-transform:uppercase;
+    letter-spacing:.03em; padding:2px 8px; border-radius:999px; }
+  .sev.high { background:color-mix(in srgb,var(--bad) 15%,transparent); color:var(--bad); }
+  .sev.med { background:color-mix(in srgb,var(--warn) 15%,transparent); color:var(--warn); }
+  .sev.low { background:color-mix(in srgb,var(--grey) 18%,transparent); color:var(--grey); }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th,td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); }
   th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
@@ -124,12 +129,37 @@
     <div class="loop">
       <div class="node"><b>Monitor</b><span class="sub">replay &middot; score &middot; profile</span><span class="chip good">{{ loop.determinism_pct }}% deterministic</span></div>
       <div class="arrow">&rarr;</div>
-      <div class="node"><b>Control</b><span class="sub">the gate decides</span><span class="chip {{ loop.gate_verdict }}">{{ loop.gate_verdict }}</span> <span class="k">&middot; {{ loop.needs_review }} to human review</span></div>
+      <div class="node"><b>Control</b><span class="sub">the gate decides</span><span class="chip {{ loop.gate_verdict }}">{{ loop.gate_verdict }}</span> <span class="k">&middot; {{ loop.review_open }} in the review queue</span></div>
       <div class="arrow">&rarr;</div>
       <div class="node"><b>Optimize</b><span class="sub">advise &middot; validate &middot; promote</span><span class="chip SAFE">{{ loop.n_safe }} SAFE</span></div>
     </div>
     <div class="note">Automated: the gate blocks a high-confidence regression. Human-notify: cases routed to review. Hybrid: SAFE optimizations wait for a human to apply.</div>
   </section>
+
+  {% if review %}
+  <section>
+    <h2>Needs attention &middot; the human-notify tier</h2>
+    <p class="note" style="margin:0 0 12px">
+      These signals do not block a merge on their own; they wait for a person.
+      Resolving a judge-review item with a label feeds the calibration set, so a
+      human decision here tightens the gate next time. Clear them with
+      <code>tg review resolve &lt;id&gt; --label pass|fail</code>.
+    </p>
+    <table>
+      <thead><tr><th>Signal</th><th>Severity</th><th>Ref</th><th>Why</th></tr></thead>
+      <tbody>
+        {% for r in review %}
+        <tr>
+          <td>{{ r.kind }}</td>
+          <td><span class="sev {{ r.severity }}">{{ r.severity }}</span></td>
+          <td>{{ r.ref }}</td>
+          <td>{{ r.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
 
   {% if trends %}
   <section>
