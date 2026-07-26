@@ -18,13 +18,19 @@ reproduces the original cost and latency, so the gate sees real numbers offline.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from tracegym.capture.llm import groq_chat, local_chat, record_from_content
-from tracegym.capture.otel import llm_span_attributes, record_span, tool_span_attributes
+from tracegym.capture.otel import (
+    agent_span_attributes,
+    llm_span_attributes,
+    record_span,
+    tool_span_attributes,
+)
 from tracegym.config import cost_usd, load_prices
 from tracegym.store.blobs import get, put
 from tracegym.util.canon import canonical_json, scrub, sha256_hex
@@ -76,6 +82,47 @@ class Runtime:
         self.live_calls = 0  # real fn / provider invocations; stays 0 in frozen_strict
         self._seq = 0
         self._clock_ns = 0  # deterministic per-run clock, advanced by recorded latency
+        self._agent_stack: list[str] = []  # ids of the open agent spans, outermost first
+
+    # -- agents ----------------------------------------------------------------
+
+    @contextmanager
+    def agent(self, name: str) -> Iterator[None]:
+        """Group every span emitted in this block under one agent span.
+
+        The spans of the tools and LLM turns called inside (and any nested agent)
+        point at this span through parent_id, so a multi-agent trajectory, an
+        orchestrator delegating to sub-agents, is reconstructable from the spans
+        table alone. Spans emitted outside any agent block keep a null parent, so
+        single-agent traces are unchanged.
+        """
+        self._seq += 1
+        span_id = f"{self.trace_id}-{self._seq:04d}"
+        parent_id = self._agent_stack[-1] if self._agent_stack else None
+        start_ns = self._clock_ns
+        self._agent_stack.append(span_id)
+        status = "OK"
+        try:
+            yield
+        except Exception:
+            status = "ERROR"
+            raise
+        finally:
+            self._agent_stack.pop()
+            record_span(
+                self.conn,
+                span_id=span_id,
+                trace_id=self.trace_id,
+                parent_id=parent_id,
+                kind="agent",
+                name=name,
+                input_sha=None,
+                output_sha=None,
+                start_ns=start_ns,
+                end_ns=self._clock_ns,  # advanced by the child spans that ran inside
+                attributes=agent_span_attributes(name=name),
+                status=status,
+            )
 
     # -- tools -----------------------------------------------------------------
 
@@ -223,6 +270,7 @@ class Runtime:
             self.conn,
             span_id=f"{self.trace_id}-{self._seq:04d}",
             trace_id=self.trace_id,
+            parent_id=self._agent_stack[-1] if self._agent_stack else None,
             kind=kind,
             name=name,
             input_sha=input_sha,

@@ -17,7 +17,7 @@ from tracegym.store.blobs import get
 
 def _spans(conn, trace_id: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT kind, name, start_ns, end_ns, attributes FROM spans "
+        "SELECT id, parent_id, kind, name, status, start_ns, end_ns, attributes FROM spans "
         "WHERE trace_id = ? ORDER BY start_ns, id",
         (trace_id,),
     ).fetchall()
@@ -26,8 +26,13 @@ def _spans(conn, trace_id: str) -> list[dict]:
         a = json.loads(r["attributes"] or "{}")
         out.append(
             {
+                "id": r["id"],
+                "parent_id": r["parent_id"],
                 "kind": r["kind"],
                 "name": r["name"],
+                "status": r["status"],
+                "start_ns": int(r["start_ns"] or 0),
+                "end_ns": int(r["end_ns"] or 0),
                 "input_tokens": int(a.get(USAGE_INPUT_TOKENS, 0) or 0),
                 "output_tokens": int(a.get(USAGE_OUTPUT_TOKENS, 0) or 0),
                 "latency_ms": round(float(a.get(LATENCY_MS, 0) or 0), 3),
@@ -35,6 +40,28 @@ def _spans(conn, trace_id: str) -> list[dict]:
             }
         )
     return out
+
+
+def trajectory(conn, trace_id: str) -> list[dict]:
+    """Spans of a trace ordered for a waterfall, each with its nesting depth.
+
+    Depth is the number of agent ancestors, so an orchestrator sits at depth 0 and
+    the spans of the sub-agents it calls sit one level in. Used to draw the
+    multi-agent trajectory; a single-agent trace comes back all at depth 0.
+    """
+    spans = _spans(conn, trace_id)
+    by_id = {s["id"]: s for s in spans}
+    for s in spans:
+        depth = 0
+        pid, guard = s["parent_id"], 0
+        while pid is not None and guard < 64:
+            parent = by_id.get(pid)
+            if parent is None:
+                break
+            depth += 1
+            pid, guard = parent["parent_id"], guard + 1
+        s["depth"] = depth
+    return spans
 
 
 def list_cases(conn, run_id: str) -> list[dict]:

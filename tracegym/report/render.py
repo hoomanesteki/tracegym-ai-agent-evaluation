@@ -15,7 +15,7 @@ from pathlib import Path
 
 from jinja2 import Environment, select_autoescape
 
-from tracegym.report.charts import linechart
+from tracegym.report.charts import linechart, waterfall
 from tracegym.spc import drift_check
 from tracegym.timeseries import METRICS, delta, metric_series
 
@@ -173,6 +173,17 @@ _KIND_LABEL = {
 }
 
 
+def _multiagent(bundle: dict) -> dict | None:
+    ma = bundle.get("multiagent")
+    if not ma or not ma.get("trajectory"):
+        return None
+    return {
+        "case_id": ma["case_id"],
+        "agents": ma.get("agents", []),
+        "chart": waterfall(ma["trajectory"]),
+    }
+
+
 def _review_view(items: list[dict]) -> list[dict]:
     return [
         {
@@ -214,6 +225,7 @@ def build_context(bundle: dict, title: str) -> dict:
         "trends": _trends(bundle.get("history", {})),
         "loop": _loop(bundle),
         "review": _review_view(bundle.get("review", [])),
+        "multiagent": _multiagent(bundle),
     }
 
 

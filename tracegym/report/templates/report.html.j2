@@ -107,6 +107,16 @@
   .loop .node b { display:block; font-size:14px; margin-bottom:2px; }
   .loop .node .sub { color:var(--muted); font-size:12px; display:block; margin-bottom:8px; }
   .loop .arrow { align-self:center; color:var(--muted); font-size:20px; }
+  svg.waterfall { width:100%; height:auto; max-width:560px; font-size:11px; }
+  svg.waterfall .lbl { fill:var(--text); font-variant-numeric:tabular-nums; }
+  svg.waterfall .agent { fill:var(--s1); }
+  svg.waterfall .llm { fill:var(--accent); }
+  svg.waterfall .tool { fill:var(--good); }
+  svg.waterfall .ms { fill:var(--muted); }
+  svg.waterfall .bad { fill:var(--bad); }
+  .legend { display:flex; gap:14px; font-size:12px; color:var(--muted); margin:4px 0 10px; }
+  .legend span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:middle; }
+  .legend .a::before { background:var(--s1); } .legend .l::before { background:var(--accent); } .legend .t::before { background:var(--good); }
 </style>
 </head>
 <body>
@@ -193,6 +203,44 @@
       {% endif %}{% endfor %}
     </div>
     {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if multiagent %}
+  <section>
+    <h2>Multi-agent trajectory &middot; who did what</h2>
+    <p class="note" style="margin:0 0 10px">
+      One recorded orchestrator delegating to a retriever and a writer. Cost and
+      latency are attributed per agent by walking each span to its nearest agent
+      ancestor, so a regression can be traced to the sub-agent that caused it.
+    </p>
+    {% if multiagent.agents %}
+    <table style="max-width:560px">
+      <thead><tr><th>Agent</th><th class="num">LLM calls</th><th class="num">Tool calls</th><th class="num">Latency ms</th><th class="num">Cost $</th></tr></thead>
+      <tbody>
+        {% for a in multiagent.agents %}
+        <tr>
+          <td class="mono">{{ a.agent }}</td>
+          <td class="num">{{ a.llm_calls }}</td>
+          <td class="num">{{ a.tool_calls }}</td>
+          <td class="num">{{ '%g'|format(a.latency_ms) }}</td>
+          <td class="num">{{ '%.6f'|format(a.cost_usd) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% if multiagent.chart %}
+    <div class="legend"><span class="a">agent</span><span class="l">llm</span><span class="t">tool</span></div>
+    <svg class="waterfall" viewBox="0 0 {{ multiagent.chart.width }} {{ multiagent.chart.height }}" role="img" aria-label="agent trajectory for {{ multiagent.case_id }}">
+      {% for r in multiagent.chart.rows %}
+      <text class="lbl" x="{{ r.label_x }}" y="{{ r.y + 15 }}">{{ r.kind }}:{{ r.name }}</text>
+      <rect class="{{ 'bad' if not r.ok else r.kind }}" x="{{ r.x }}" y="{{ r.bar_y }}" width="{{ r.w }}" height="{{ r.h }}" rx="2"><title>{{ r.kind }}:{{ r.name }} &middot; {{ '%g'|format(r.ms) }}ms</title></rect>
+      <text class="ms" x="{{ r.x + r.w + 4 }}" y="{{ r.y + 15 }}">{{ '%g'|format(r.ms) }}ms</text>
+      {% endfor %}
+    </svg>
+    <div class="k">trajectory for case {{ multiagent.case_id }}</div>
+    {% endif %}
   </section>
   {% endif %}
 

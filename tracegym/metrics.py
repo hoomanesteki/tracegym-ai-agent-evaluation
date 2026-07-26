@@ -12,6 +12,59 @@ import json
 
 import numpy as np
 
+from tracegym.capture.otel import COST_USD, LATENCY_MS
+
+
+def _nearest_agent_name(by_id: dict, span) -> str | None:
+    """Walk parent_id up to the closest ancestor agent span; return its name."""
+    pid = span["parent_id"]
+    guard = 0
+    while pid is not None and guard < 64:
+        parent = by_id.get(pid)
+        if parent is None:
+            return None
+        if parent["kind"] == "agent":
+            return parent["name"]
+        pid = parent["parent_id"]
+        guard += 1
+    return None
+
+
+def agent_breakdown(conn, run_id: str) -> list[dict]:
+    """Attribute cost, latency and calls to each agent by nearest-ancestor span.
+
+    Returns [] for a single-agent run (no agent spans), so the scorecard only
+    grows an agent breakdown when the trace actually used rt.agent().
+    """
+    rows = conn.execute(
+        "SELECT s.id, s.parent_id, s.kind, s.name, s.attributes "
+        "FROM spans s JOIN results r ON r.trace_id = s.trace_id WHERE r.run_id = ?",
+        (run_id,),
+    ).fetchall()
+    if not any(r["kind"] == "agent" for r in rows):
+        return []
+    by_id = {r["id"]: r for r in rows}
+    agg: dict[str, dict] = {}
+    for r in rows:
+        if r["kind"] not in ("llm", "tool"):
+            continue
+        name = _nearest_agent_name(by_id, r) or "(root)"
+        a = agg.setdefault(
+            name,
+            {"agent": name, "llm_calls": 0, "tool_calls": 0, "cost_usd": 0.0, "latency_ms": 0.0},
+        )
+        attrs = json.loads(r["attributes"] or "{}")
+        if r["kind"] == "llm":
+            a["llm_calls"] += 1
+            a["cost_usd"] += float(attrs.get(COST_USD, 0.0))
+        else:
+            a["tool_calls"] += 1
+        a["latency_ms"] += float(attrs.get(LATENCY_MS, 0.0))
+    for a in agg.values():
+        a["cost_usd"] = round(a["cost_usd"], 8)
+        a["latency_ms"] = round(a["latency_ms"], 3)
+    return [agg[k] for k in sorted(agg)]
+
 
 def _percentiles(values: list[float]) -> dict:
     if not values:
@@ -68,7 +121,7 @@ def suite_scorecard(conn, run_id: str, success_threshold: float = 1.0) -> dict:
         name: round(t["passed"] / t["total"], 4) for name, t in check_tally.items() if t["total"]
     }
 
-    return {
+    scorecard = {
         "cases": n,
         "task_success_rate": round(sum(1 for s in scores if s >= success_threshold) / n, 4),
         "mean_score": round(float(np.mean(scores)), 4),
@@ -80,3 +133,7 @@ def suite_scorecard(conn, run_id: str, success_threshold: float = 1.0) -> dict:
         "invariant_failures": invariant_failures,
         "check_pass_rates": check_pass_rates,
     }
+    agents = agent_breakdown(conn, run_id)
+    if agents:
+        scorecard["agents"] = agents
+    return scorecard

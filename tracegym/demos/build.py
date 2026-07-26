@@ -25,6 +25,12 @@ from tracegym.demos.data import (
     SUPPORT_QA,
 )
 from tracegym.demos.harness import agent_and_responder
+from tracegym.demos.orchestrator import (
+    CORPUS,
+    make_orchestrator,
+    orchestrator_cases,
+    orchestrator_responder,
+)
 from tracegym.gate import promote
 from tracegym.judge import judge_case, judge_run
 from tracegym.replay import run_suite
@@ -293,6 +299,39 @@ def _seed_review_items(conn) -> None:
     conn.commit()
 
 
+def _seed_multiagent(conn, blob_root, dest: Path) -> dict:
+    """Record a tiny orchestrator -> (retriever, writer) run so the report can show
+    a real multi-agent trajectory and per-agent cost. Kept out of the graded suites
+    so it never perturbs the headline recall or calibration numbers."""
+    cases = orchestrator_cases()
+    suite_dir = dest / "suites" / "orchestrator"
+    suite_dir.mkdir(parents=True, exist_ok=True)
+    with open(suite_dir / "cases.jsonl", "w") as f:
+        for c in cases:
+            f.write(json.dumps(c) + "\n")
+    agent = make_orchestrator(CORPUS)
+    run_suite(
+        conn,
+        blob_root,
+        suite_id="orchestrator",
+        cases=cases,
+        agent=agent,
+        mode="record",
+        responder=orchestrator_responder,
+    )
+    run = run_suite(
+        conn,
+        blob_root,
+        suite_id="orchestrator",
+        cases=cases,
+        agent=agent,
+        mode="frozen",
+        responder=orchestrator_responder,
+    )
+    promote(conn, "baseline-orchestrator", "orchestrator", run)
+    return {"suite": "orchestrator", "run": run, "case_id": cases[0]["id"]}
+
+
 def _seed_canary_calibration(conn, blob_root, base_run: str, spec: dict) -> None:
     """Judge each canary and record its gold verdict as a label.
 
@@ -383,6 +422,7 @@ def build_demodata(dest: str | Path) -> dict:
                 )
             promote(conn, f"baseline-{sid}", sid, base_run)
             spec["baseline_run"] = base_run
+        multiagent = _seed_multiagent(conn, blob_root, dest)
         _seed_history(conn)
         _seed_review_items(conn)
         conn.commit()
@@ -394,6 +434,7 @@ def build_demodata(dest: str | Path) -> dict:
         "suites": {sid: {"cases": len(spec["cases"])} for sid, spec in suites.items()},
         "total_cases": sum(len(spec["cases"]) for spec in suites.values()),
         "baselines": {sid: spec["baseline_run"] for sid, spec in suites.items()},
+        "multiagent": multiagent,
     }
     (dest / "manifest.json").write_text(json.dumps(manifest, indent=2))
     return manifest
