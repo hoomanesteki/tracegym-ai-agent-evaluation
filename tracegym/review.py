@@ -9,11 +9,25 @@ into control. Keyless and offline: this is a table plus `tg review`, not a servi
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from tracegym.calibrate import add_label
 
 _SEV_ORDER = {"high": 0, "med": 1, "low": 2}
+
+
+@dataclass
+class ResolveResult:
+    """Outcome of resolve(): whether the item was resolved and whether resolving it
+    actually wrote a calibration label (only needs_review items with a case output
+    can). Truthy iff resolved, so callers can still `if resolve(...)`."""
+
+    resolved: bool
+    labeled: bool = False
+
+    def __bool__(self) -> bool:
+        return self.resolved
 
 
 def _now() -> str:
@@ -65,24 +79,27 @@ def ack(conn, item_id: str) -> bool:
 
 def resolve(
     conn, item_id: str, *, label_pass: bool | None = None, labeler: str = "reviewer"
-) -> bool:
-    """Resolve an item. For a needs_review item with a label, record the human label."""
+) -> ResolveResult:
+    """Resolve an item. For a needs_review item that carries a case output, a label
+    records the human decision into the calibration set. Returns a ResolveResult
+    whose `labeled` flag says whether a label was actually written."""
     row = conn.execute("SELECT * FROM review_queue WHERE id = ?", (item_id,)).fetchone()
     if row is None:
-        return False
-    if (
+        return ResolveResult(resolved=False)
+    labeled = bool(
         row["kind"] == "needs_review"
         and label_pass is not None
         and row["case_id"]
         and row["output_sha"]
-    ):
+    )
+    if labeled:
         add_label(conn, row["case_id"], row["output_sha"], label_pass, labeler=labeler)
     conn.execute(
         "UPDATE review_queue SET status = 'resolved', resolved_at = ? WHERE id = ?",
         (_now(), item_id),
     )
     conn.commit()
-    return True
+    return ResolveResult(resolved=True, labeled=labeled)
 
 
 def populate_from_run(conn, run_id: str, gate_result=None) -> int:

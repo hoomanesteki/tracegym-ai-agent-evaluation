@@ -259,11 +259,15 @@ def review(
                 console.print("--label must be pass or fail")
                 raise typer.Exit(1)
             label_pass = label == "pass"
-        ok = rq.resolve(conn, item_id, label_pass=label_pass)
-        if ok and label_pass is not None:
+        res = rq.resolve(conn, item_id, label_pass=label_pass)
+        if not res:
+            console.print("No such item.")
+        elif res.labeled:
             console.print("Resolved and recorded a human label; calibration will pick it up.")
+        elif label_pass is not None:
+            console.print("Resolved. No label recorded: this item has no case output to label.")
         else:
-            console.print("Resolved." if ok else "No such item.")
+            console.print("Resolved.")
         return
     console.print(f"Unknown action {action!r}. Use: list | ack | resolve.")
     raise typer.Exit(1)

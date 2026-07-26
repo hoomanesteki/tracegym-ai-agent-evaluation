@@ -138,123 +138,39 @@ def _meta_cases(rubric_sha: str) -> list[dict]:
 # tell a story on a fresh demo: a regression lands (score dips, invariant failures
 # spike), the gate catches it, it is fixed, then the advisor trims cost. Real
 # projects get a true series as each CI run appends one frozen run.
+# A short illustrative history that tells one clean story: quality dips at a
+# regression (mean score, task success, and invariant failures all move together)
+# and then recovers, while cost and latency stay flat. Cost and latency are held
+# constant on purpose so the SPC drift check reads them as in-control: their real
+# run-to-run wobble here is sub-microsecond replay-timing noise, not signal.
+def _history_points(mean, success, invariants, *, cost, latency):
+    return [
+        {
+            "mean_score": m,
+            "task_success_rate": s,
+            "invariant_failures": inv,
+            "cost_usd": cost,
+            "p95_latency_ms": latency,
+        }
+        for m, s, inv in zip(mean, success, invariants, strict=True)
+    ]
+
+
 _HISTORY = {
-    "sql-analyst": [
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000102,
-            "p95_latency_ms": 0.11,
-            "invariant_failures": 0,
-        },
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000102,
-            "p95_latency_ms": 0.11,
-            "invariant_failures": 0,
-        },
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000108,
-            "p95_latency_ms": 0.12,
-            "invariant_failures": 0,
-        },
-        {
-            "mean_score": 0.83,
-            "task_success_rate": 0.75,
-            "cost_usd": 0.000108,
-            "p95_latency_ms": 0.12,
-            "invariant_failures": 2,
-        },
-        {
-            "mean_score": 0.83,
-            "task_success_rate": 0.75,
-            "cost_usd": 0.000109,
-            "p95_latency_ms": 0.12,
-            "invariant_failures": 2,
-        },
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000108,
-            "p95_latency_ms": 0.12,
-            "invariant_failures": 0,
-        },
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000091,
-            "p95_latency_ms": 0.11,
-            "invariant_failures": 0,
-        },
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000091,
-            "p95_latency_ms": 0.11,
-            "invariant_failures": 0,
-        },
-    ],
-    "support-rag": [
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000140,
-            "p95_latency_ms": 0.06,
-            "invariant_failures": 0,
-        },
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000140,
-            "p95_latency_ms": 0.06,
-            "invariant_failures": 0,
-        },
-        {
-            "mean_score": 0.90,
-            "task_success_rate": 0.87,
-            "cost_usd": 0.000141,
-            "p95_latency_ms": 0.06,
-            "invariant_failures": 1,
-        },
-        {
-            "mean_score": 0.90,
-            "task_success_rate": 0.87,
-            "cost_usd": 0.000141,
-            "p95_latency_ms": 0.06,
-            "invariant_failures": 1,
-        },
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000140,
-            "p95_latency_ms": 0.06,
-            "invariant_failures": 0,
-        },
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000140,
-            "p95_latency_ms": 0.06,
-            "invariant_failures": 0,
-        },
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000133,
-            "p95_latency_ms": 0.06,
-            "invariant_failures": 0,
-        },
-        {
-            "mean_score": 1.0,
-            "task_success_rate": 1.0,
-            "cost_usd": 0.000133,
-            "p95_latency_ms": 0.06,
-            "invariant_failures": 0,
-        },
-    ],
+    "sql-analyst": _history_points(
+        mean=[1.0, 1.0, 1.0, 0.83, 0.83, 1.0, 1.0, 1.0],
+        success=[1.0, 1.0, 1.0, 0.75, 0.75, 1.0, 1.0, 1.0],
+        invariants=[0, 0, 0, 2, 2, 0, 0, 0],
+        cost=0.000104,
+        latency=0.12,
+    ),
+    "support-rag": _history_points(
+        mean=[1.0, 1.0, 0.90, 0.90, 1.0, 1.0, 1.0, 1.0],
+        success=[1.0, 1.0, 0.87, 0.87, 1.0, 1.0, 1.0, 1.0],
+        invariants=[0, 0, 1, 1, 0, 0, 0, 0],
+        cost=0.00014,
+        latency=0.06,
+    ),
 }
 
 
@@ -276,8 +192,14 @@ def _seed_history(conn) -> None:
     conn.commit()
 
 
-def _seed_review_items(conn) -> None:
-    """Two illustrative human-notify items so the demo's review queue is not empty."""
+def _seed_review_items(conn, support_run: str) -> None:
+    """Two illustrative human-notify items so the demo's review queue is not empty.
+
+    The needs_review item points at a real support-rag case output, so resolving it
+    with `tg review resolve <id> --label pass|fail` actually writes a calibration
+    label and closes the loop (the point of the human-notify tier), rather than
+    being a dead placeholder.
+    """
     from tracegym.review import enqueue
 
     enqueue(
@@ -288,14 +210,21 @@ def _seed_review_items(conn) -> None:
         ref_id="cost-drift",
         reason="illustrative: cost drifted +31% on a past run (soft band), routed to a human",
     )
-    enqueue(
-        conn,
-        run_id="hist-support-rag-02",
-        kind="needs_review",
-        severity="low",
-        ref_id="sr-011",
-        reason="illustrative: the two judges split on a borderline answer",
-    )
+    row = conn.execute(
+        "SELECT case_id, output_sha FROM results WHERE run_id = ? ORDER BY case_id LIMIT 1",
+        (support_run,),
+    ).fetchone()
+    if row is not None:
+        enqueue(
+            conn,
+            run_id=support_run,
+            kind="needs_review",
+            severity="low",
+            ref_id=row["case_id"],
+            case_id=row["case_id"],
+            output_sha=row["output_sha"],
+            reason="illustrative: a borderline answer routed for a second opinion",
+        )
     conn.commit()
 
 
@@ -424,7 +353,7 @@ def build_demodata(dest: str | Path) -> dict:
             spec["baseline_run"] = base_run
         multiagent = _seed_multiagent(conn, blob_root, dest)
         _seed_history(conn)
-        _seed_review_items(conn)
+        _seed_review_items(conn, suites["support-rag"]["baseline_run"])
         conn.commit()
         conn.close()
     finally:

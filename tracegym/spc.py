@@ -92,7 +92,13 @@ def drift_check(
     if n < min_samples:
         return {"status": "insufficient", "drift": False, "n": n, "min_samples": min_samples}
 
-    center = float(np.median(v))
+    # Center on an in-control baseline window, not the whole series. Using the
+    # global median as the target would place the earlier half of any monotone
+    # trend on the adverse side by construction, so a purely favorable trend (an
+    # up-metric climbing, a cost falling) would fabricate a CUSUM excursion. The
+    # baseline is the starting level; adverse drift is measured away from it.
+    n_base = max(3, n // 3)
+    center = float(np.median(v[:n_base]))
     sigma = _scale(v)
     if sigma <= 1e-12:
         return {"status": "flat", "drift": False, "n": n, "center": round(center, 6)}

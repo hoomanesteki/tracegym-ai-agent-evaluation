@@ -85,13 +85,21 @@ def load_config(path: str | Path = "tracegym.yaml") -> Config:
         role: JudgeRole(**j[role]) for role in ("primary", "secondary", "tiebreaker") if role in j
     }
     g = raw.get("gate", {})
+    _d = GateConfig()  # dataclass defaults, so each knob has one source of truth
     gate = GateConfig(
-        bootstrap_samples=g.get("bootstrap_samples", 10000),
-        delta_block=g.get("delta_block", -0.15),
-        ci_must_exclude_zero=g.get("ci_must_exclude_zero", True),
-        cost_regression_pct=g.get("cost_regression_pct", 50.0),
-        block_on_l1_invariant_regression=g.get("block_on_l1_invariant_regression", True),
-        min_cases_for_ci=g.get("min_cases_for_ci", 3),
+        bootstrap_samples=g.get("bootstrap_samples", _d.bootstrap_samples),
+        delta_block=g.get("delta_block", _d.delta_block),
+        ci_must_exclude_zero=g.get("ci_must_exclude_zero", _d.ci_must_exclude_zero),
+        cost_regression_pct=g.get("cost_regression_pct", _d.cost_regression_pct),
+        block_on_l1_invariant_regression=g.get(
+            "block_on_l1_invariant_regression", _d.block_on_l1_invariant_regression
+        ),
+        min_cases_for_ci=g.get("min_cases_for_ci", _d.min_cases_for_ci),
+        success_threshold=g.get("success_threshold", _d.success_threshold),
+        flip_min_b=g.get("flip_min_b", _d.flip_min_b),
+        flip_alpha=g.get("flip_alpha", _d.flip_alpha),
+        block_on_flip_test=g.get("block_on_flip_test", _d.block_on_flip_test),
+        soft_cost_pct=g.get("soft_cost_pct", _d.soft_cost_pct),
     )
     a = raw.get("advisor", {})
     advisor = AdvisorConfig(

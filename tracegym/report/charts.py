@@ -95,7 +95,10 @@ def waterfall(
                 "label_x": 4 + s.get("depth", 0) * 12,
                 "kind": s["kind"],
                 "name": s["name"],
-                "ms": s.get("latency_ms", round((s["end_ns"] - s["start_ns"]) / 1e6, 3)),
+                # Duration straight from the span. An agent (grouping) span carries no
+                # latency_ms attribute, so this is the only correct source for it; for
+                # a tool/LLM span it equals the recorded latency by construction.
+                "ms": round((s["end_ns"] - s["start_ns"]) / 1e6, 3),
                 "ok": s.get("status", "OK") == "OK",
             }
         )

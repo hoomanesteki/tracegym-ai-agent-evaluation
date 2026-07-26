@@ -61,3 +61,15 @@ def test_a_single_run_blip_does_not_trip_the_chart():
     r = drift_check([1, 1, 1, 1, 1, 0.99, 1, 1], "up")
     assert r["status"] == "stable"
     assert r["drift"] is False
+
+
+def test_a_favorable_monotone_trend_never_fabricates_an_excursion():
+    # An up-metric climbing steadily, or a cost falling steadily, is good news. The
+    # CUSUM must center on the baseline, not the whole-series median, so the low
+    # starting level is not misread as an adverse excursion.
+    up = drift_check([0.70, 0.74, 0.78, 0.82, 0.86, 0.90, 0.95, 0.98, 0.99, 1.0], "up")
+    assert up["status"] == "stable"
+    assert up["excursion"] is False
+    down = drift_check([1.4, 1.3, 1.2, 1.1, 1.0, 0.9, 0.8, 0.7], "down")  # cost falling
+    assert down["status"] == "stable"
+    assert down["excursion"] is False

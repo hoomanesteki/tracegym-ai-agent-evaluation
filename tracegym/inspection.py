@@ -45,9 +45,10 @@ def _spans(conn, trace_id: str) -> list[dict]:
 def trajectory(conn, trace_id: str) -> list[dict]:
     """Spans of a trace ordered for a waterfall, each with its nesting depth.
 
-    Depth is the number of agent ancestors, so an orchestrator sits at depth 0 and
-    the spans of the sub-agents it calls sit one level in. Used to draw the
-    multi-agent trajectory; a single-agent trace comes back all at depth 0.
+    Depth is the number of ancestor spans (which the internal recorder only ever
+    sets to agent spans), so an orchestrator sits at depth 0 and the tool and LLM
+    spans of the sub-agents it calls sit deeper. Used to draw the multi-agent
+    trajectory; a single-agent trace comes back all at depth 0.
     """
     spans = _spans(conn, trace_id)
     by_id = {s["id"]: s for s in spans}
