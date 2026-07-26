@@ -134,7 +134,7 @@ from tracegym.gate import gate_against_baseline, promote
 conn = connect("traces.db")
 run = run_suite(conn, "blobs", suite_id="my-agent", cases=cases, agent=my_agent, mode="frozen")
 promote(conn, "baseline", "my-agent", run)  # the first good run becomes the reference
-result = gate_against_baseline(conn, run)   # PASS | WARN | BLOCK, deterministic
+result = gate_against_baseline(conn, run)  # PASS | WARN | BLOCK, deterministic
 ```
 
 [.github/workflows/eval-gate.yml](.github/workflows/eval-gate.yml) is the CI recipe
