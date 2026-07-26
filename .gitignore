@@ -218,7 +218,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Editor / OS / local tooling
-.claude/
 .DS_Store
 *.swp
 

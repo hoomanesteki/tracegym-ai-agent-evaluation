@@ -33,9 +33,11 @@ class GateConfig:
     min_cases_for_ci: int = 3
     # A case "passes" for the flip test at or above this score. b pass->fail flips
     # with an exact one-sided binomial tail below flip_alpha auto-block, catching a
-    # success-rate regression the mean-delta CI can miss on bimodal scores.
+    # success-rate regression the mean-delta CI can miss on bimodal scores. The
+    # minimum is 5 because with no reverse flips the exact tail cannot reach 0.05
+    # below that (b=4 gives p=0.0625), so a smaller floor could never fire.
     success_threshold: float = 1.0
-    flip_min_b: int = 3
+    flip_min_b: int = 5
     flip_alpha: float = 0.05
     block_on_flip_test: bool = True
     # A cost rise above this soft percent (but under cost_regression_pct) WARNs.

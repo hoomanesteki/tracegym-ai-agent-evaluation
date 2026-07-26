@@ -58,8 +58,10 @@ returns **NEEDS_REVIEW** rather than a forced verdict when the judges disagree.
 ### 5. Gate
 A paired bootstrap over per-case deltas blocks a merge only on high-confidence
 signals: a new invariant failure, a mean score drop whose 95% CI stays below
-zero, or a cost regression. Uncertain wobbles warn, not block. The same pure
-predicate powers the CI gate and the efficiency advisor.
+zero, an exact sign test on a consistent pass/fail flip, a cost regression, or
+nondeterministic churn (a changed output under an identical config). Uncertain
+wobbles warn, not block. The same pure predicate powers the CI gate and the
+efficiency advisor.
 :::
 
 ## Benchmark against a reference

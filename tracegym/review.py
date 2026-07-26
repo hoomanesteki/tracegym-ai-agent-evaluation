@@ -72,7 +72,9 @@ def list_open(conn) -> list[dict]:
 
 
 def ack(conn, item_id: str) -> bool:
-    cur = conn.execute("UPDATE review_queue SET status = 'ack' WHERE id = ?", (item_id,))
+    cur = conn.execute(
+        "UPDATE review_queue SET status = 'ack' WHERE id = ? AND status = 'open'", (item_id,)
+    )
     conn.commit()
     return cur.rowcount > 0
 

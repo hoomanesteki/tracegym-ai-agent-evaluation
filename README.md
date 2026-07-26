@@ -101,8 +101,9 @@ flowchart LR
 
 The gate is the automated tier: it blocks only a high-confidence regression (a new
 invariant failure, a mean drop whose bootstrap CI stays below zero, a one-directional
-pass/fail flip, or a cost jump past the hard limit). Softer signals do not block a
-merge; they route to a **human-notify** tier instead.
+pass/fail flip, a cost jump past the hard limit, or nondeterministic churn where the
+output changed under an identical config). Softer signals do not block a merge; they
+route to a **human-notify** tier instead.
 
 - **A `WARN` verdict** for a mean dip whose CI still crosses zero or a cost rise in
   the soft band. In CI it annotates rather than fails the check.
@@ -115,20 +116,34 @@ merge; they route to a **human-notify** tier instead.
 
 ## Use it on your own agent
 
+Capture your agent's LLM and tool calls once through the recording proxy:
+
 ```bash
 uv add "git+https://github.com/hoomanesteki/tracegym-ai-agent-evaluation"
 tg record --proxy --port 8080     # point your agent's base_url here, run it once
-tg gate --vs baseline             # exit 1 on a regression, wire into CI
-tg trend --check                  # SPC drift check across the run history
-tg review                         # the human-notify queue: unsure judges, warnings
-tg advise                         # validated cheaper/faster suggestions
-tg report                         # open the HTML report
 ```
 
-The command is `tg` (or its alias `tracegym`).
+From there the harness is a small library. Turn the recording into a golden
+suite, replay it deterministically, and gate it against a promoted baseline:
 
-The CI recipe is [.github/workflows/eval-gate.yml](.github/workflows/eval-gate.yml):
-it replays the suites and blocks the merge with **no secrets configured**.
+```python
+from tracegym.store import connect
+from tracegym.replay import run_suite
+from tracegym.gate import gate_against_baseline, promote
+
+conn = connect("traces.db")
+run = run_suite(conn, "blobs", suite_id="my-agent", cases=cases, agent=my_agent, mode="frozen")
+promote(conn, "baseline", "my-agent", run)  # the first good run becomes the reference
+result = gate_against_baseline(conn, run)   # PASS | WARN | BLOCK, deterministic
+```
+
+[.github/workflows/eval-gate.yml](.github/workflows/eval-gate.yml) is the CI recipe
+this repo runs on itself: it replays the suites and blocks the merge with **no
+secrets configured**. Every `tg` command (`gate`, `trend --check`, `review`,
+`advise`, `report`, `profile`, `calibrate`, `cases`, `show`, `diff`) runs against a
+workspace via `--workspace`; with no workspace they drive the bundled demo, so you
+can try each one before wiring your own. The command is `tg` (or its alias
+`tracegym`).
 
 ## The seeded regressions
 
@@ -167,6 +182,9 @@ tg diff sql_delete       # a seeded bug: baseline vs buggy + the check that caug
 - The over-time trend and drift charts in the demo run on a short seeded history
   (labeled illustrative in the report) because `tg demo` rebuilds its workspace
   each run. On a real project the series grows one frozen run per CI build.
+- The `tg` commands beyond `record` are built around the bundled demo workspace;
+  wiring your own agent into a gated suite is done through the library API above,
+  not yet a one-command CLI flow.
 
 ## Install
 

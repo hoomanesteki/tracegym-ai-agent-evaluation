@@ -28,6 +28,41 @@ def test_bundle_carries_case_details_and_regression_gallery(tmp_path):
     assert any(c["name"] == "sql_select_only" for c in sd["example"]["failing_checks"])
 
 
+def test_case_detail_does_not_leak_rationale_across_cases(tmp_path):
+    # Two cases can share an identical output blob; a judged case's rationale must
+    # not bleed into an unjudged one that happens to have the same output_sha.
+    from tracegym.inspection import case_detail
+    from tracegym.store import connect
+    from tracegym.store.blobs import put
+
+    conn = connect()
+    blob = tmp_path / "blobs"
+    blob.mkdir()
+    sha = put(blob, {"answer": "same"})
+    conn.execute(
+        "INSERT INTO results (id, run_id, case_id, output_sha, judge_state, score, created_at) "
+        "VALUES ('rA', 'run', 'cA', ?, 'PASS', 1, 't')",
+        (sha,),
+    )
+    conn.execute(
+        "INSERT INTO judgments (id, case_id, output_sha, rubric_sha, provider, model, rationale, "
+        "created_at) VALUES ('jA', 'cA', ?, 'rub', 'p', 'm', 'A said yes', 't')",
+        (sha,),
+    )
+    conn.execute(
+        "INSERT INTO results (id, run_id, case_id, output_sha, judge_state, score, created_at) "
+        "VALUES ('rB', 'run', 'cB', ?, NULL, 1, 't')",
+        (sha,),
+    )
+    conn.commit()
+
+    d_b = case_detail(conn, blob, "run", "cB")
+    assert d_b["judge"]["state"] is None
+    assert d_b["judge"]["rationale"] == ""  # must not inherit cA's rationale
+    d_a = case_detail(conn, blob, "run", "cA")
+    assert d_a["judge"]["rationale"] == "A said yes"
+
+
 def _invoke(ws, args):
     """Run a CLI command that chdir's into the workspace, restoring cwd after."""
     cwd = os.getcwd()

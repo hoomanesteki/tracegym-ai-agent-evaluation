@@ -21,6 +21,8 @@ import numpy as np
 def ewma(values, lam: float = 0.3, *, start: float | None = None):
     """Exponentially weighted moving average: z_t = lam*x_t + (1-lam)*z_{t-1}."""
     v = np.asarray(values, dtype=float)
+    if len(v) == 0:
+        return v
     z = np.empty(len(v))
     prev = float(v[0]) if start is None else float(start)
     for i in range(len(v)):

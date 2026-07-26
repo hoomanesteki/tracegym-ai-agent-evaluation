@@ -394,9 +394,9 @@
         {% for ch in c.checks %}
         <div class="ck"><span class="dot {{ 'ok' if ch.passed else 'no' }}"></span><span class="mono">{{ ch.name }}</span><span class="k">{{ ch.detail }}</span></div>
         {% endfor %}
-        {% if c.judge.rationale %}
+        {% if c.judge.state %}
         <div class="k" style="margin-top:8px">judge</div>
-        <div>{{ c.judge.state }} &middot; confidence {{ c.judge.confidence }} &middot; {{ c.judge.rationale }}</div>
+        <div>{{ c.judge.state }} &middot; confidence {{ c.judge.confidence }}{% if c.judge.rationale %} &middot; {{ c.judge.rationale }}{% endif %}</div>
         {% endif %}
         <div class="k" style="margin-top:8px">trace</div>
         {% for s in c.spans %}

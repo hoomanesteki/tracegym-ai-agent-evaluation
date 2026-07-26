@@ -12,6 +12,10 @@ def test_ewma_tracks_a_step_and_is_bounded_by_the_data():
     assert z[-1] > z[3]  # climbs toward the new level
 
 
+def test_ewma_of_empty_is_empty_not_an_error():
+    assert len(ewma([])) == 0
+
+
 def test_cusum_accumulates_only_in_the_shifted_direction():
     hi, lo = cusum([0, 0, 0, 2, 2, 2], target=0.0, k=0.5)
     assert lo[-1] == 0.0  # nothing pushed below target

@@ -77,6 +77,24 @@ def test_cost_regression_blocks():
     assert r.cost_delta_pct == 60.0
 
 
+def test_no_shared_cases_warns_instead_of_silently_passing():
+    # Disjoint case sets mean nothing was compared; a silent PASS would be a CI
+    # false negative, so it must surface as WARN.
+    r = gate_verdict(_scores([("a", 1.0)]), _scores([("b", 1.0)]), cfg=CFG)
+    assert r.verdict == "WARN"
+    assert r.n_cases == 0
+    assert not r.blocked
+
+
+def test_free_to_paid_cost_jump_warns():
+    # A percent is undefined against a $0 baseline, so a free-to-paid jump would
+    # otherwise slip through; it must warn.
+    s = _scores([("c1", 1.0)])
+    r = gate_verdict(s, s, cand_cost=5.0, base_cost=0.0, cfg=CFG)
+    assert r.verdict == "WARN"
+    assert not r.blocked
+
+
 def test_gate_is_deterministic():
     cand = _scores([(f"c{i}", 0.7) for i in range(20)])
     base = _scores([(f"c{i}", 0.85) for i in range(20)])

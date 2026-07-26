@@ -281,13 +281,35 @@ def _seed_canary_calibration(conn, blob_root, base_run: str, spec: dict) -> None
     conn.commit()
 
 
+_DEMO_MARKER = ".tracegym-demo"
+
+
 def build_demodata(dest: str | Path) -> dict:
-    """Build the full demo workspace at dest and return a manifest."""
+    """Build the full demo workspace at dest and return a manifest.
+
+    The demo is regenerated from scratch, so an existing dest is wiped first. To
+    avoid ever deleting a directory the caller did not create as a demo, that wipe
+    is refused unless dest is empty or carries the demo marker file this function
+    writes; anything else raises rather than clobbering user data.
+    """
     dest = Path(dest)
+    if dest.exists() and any(dest.iterdir()):
+        # Only wipe a directory we can recognize as a regenerable demo workspace:
+        # the marker this function writes, or the signature of a prior demo build
+        # (manifest.json plus a blobs store). Anything else is left untouched.
+        looks_like_demo = (dest / _DEMO_MARKER).exists() or (
+            (dest / "manifest.json").exists() and (dest / "blobs").is_dir()
+        )
+        if not looks_like_demo:
+            raise ValueError(
+                f"refusing to overwrite {dest}: it is not empty and is not a TraceGym "
+                f"demo workspace. Point --workspace at a new or empty directory."
+            )
     if dest.exists():
         shutil.rmtree(dest)
     (dest / "agents" / "sql_analyst").mkdir(parents=True)
     (dest / "blobs").mkdir(parents=True)
+    (dest / _DEMO_MARKER).write_text("This directory is a regenerable TraceGym demo workspace.\n")
     for s in ("support-rag", "sql-analyst", "meta-judge"):
         (dest / "suites" / s).mkdir(parents=True)
 

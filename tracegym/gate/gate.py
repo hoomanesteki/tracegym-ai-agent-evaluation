@@ -78,6 +78,7 @@ def gate_verdict(
         for c in shared
         if cand_invariant_fails.get(c, 0) > 0 and base_invariant_fails.get(c, 0) == 0
     )
+    zero_base_cost_jump = base_cost <= 0 < cand_cost
     cost_delta_pct = ((cand_cost - base_cost) / base_cost * 100) if base_cost > 0 else 0.0
 
     # Paired flip / exact sign test on pass<->fail transitions at the threshold.
@@ -88,6 +89,11 @@ def gate_verdict(
 
     reasons: list[str] = []
     warnings: list[str] = []
+
+    # No shared cases means the two runs were never actually compared on quality;
+    # a silent PASS there would be a CI false negative, so surface it to a human.
+    if not shared:
+        warnings.append("no shared cases between candidate and reference; nothing was compared")
 
     if cfg.block_on_l1_invariant_regression and new_invariant_fails > 0:
         reasons.append(f"{new_invariant_fails} new invariant failure(s)")
@@ -116,6 +122,10 @@ def gate_verdict(
         reasons.append(f"cost up {cost_delta_pct:+.1f}% > {cfg.cost_regression_pct}%")
     elif cost_delta_pct > cfg.soft_cost_pct:
         warnings.append(f"cost up {cost_delta_pct:+.1f}% (soft threshold {cfg.soft_cost_pct}%)")
+    elif zero_base_cost_jump:
+        # A percent is undefined against a $0 baseline, so the free-to-paid jump
+        # would otherwise slip through silently. Flag it for a human.
+        warnings.append(f"cost rose from $0 to ${cand_cost:.4f} (was free-tier)")
 
     verdict = "BLOCK" if reasons else ("WARN" if warnings else "PASS")
     return GateResult(

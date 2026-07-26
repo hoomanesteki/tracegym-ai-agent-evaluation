@@ -17,7 +17,7 @@ there is no room to fudge a number:
 [κ ≥ 0.70]{.metric-value}[Judge gates in CI]{.metric-label}
 :::
 ::: {.metric}
-[0.55 – 0.70]{.metric-value}[Iterate, gate on the agreement subset]{.metric-label}
+[0.55 to 0.70]{.metric-value}[Iterate, gate on the agreement subset]{.metric-label}
 :::
 ::: {.metric}
 [κ < 0.55]{.metric-value}[Advisory only, never blocks CI]{.metric-label}

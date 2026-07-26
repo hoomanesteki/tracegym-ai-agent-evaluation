@@ -67,3 +67,12 @@ def test_ack_and_resolve_change_status():
     assert rq.list_open(conn) == []  # ack removes it from the open list
     assert rq.resolve(conn, item_id)
     assert not rq.resolve(conn, "rv-does-not-exist")
+
+
+def test_ack_does_not_reopen_a_resolved_item():
+    conn = connect()
+    item_id = rq.enqueue(conn, run_id="r", kind="drift", ref_id="d1")
+    assert rq.resolve(conn, item_id)
+    assert not rq.ack(conn, item_id)  # resolving is final; ack is a no-op, not a revert
+    status = conn.execute("SELECT status FROM review_queue WHERE id = ?", (item_id,)).fetchone()
+    assert status["status"] == "resolved"

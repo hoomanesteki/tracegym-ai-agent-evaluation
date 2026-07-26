@@ -94,9 +94,12 @@ def case_detail(
         return None
     output = get(blob_root, r["output_sha"])
     checks = json.loads(r["l1_results"] or "[]")
+    # Scope the rationale to this case, not any output that happens to share the
+    # same blob: an identical answer in another case must not leak its rationale.
     rationale = conn.execute(
-        "SELECT rationale FROM judgments WHERE output_sha = ? AND rationale != '' LIMIT 1",
-        (r["output_sha"],),
+        "SELECT rationale FROM judgments WHERE case_id = ? AND output_sha = ? "
+        "AND rationale != '' LIMIT 1",
+        (case_id, r["output_sha"]),
     ).fetchone()
     return {
         "case_id": case_id,
