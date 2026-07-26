@@ -15,6 +15,8 @@ website:
         href: index.qmd
       - text: How it works
         href: how-it-works.qmd
+      - text: Case studies
+        href: case-studies.qmd
       - text: Calibration
         href: calibration.qmd
     right:

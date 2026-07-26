@@ -100,6 +100,104 @@ h2 { letter-spacing: -0.02em; margin-top: 2.6rem; }
 /* Mermaid a touch larger and centered */
 .cell-output-display pre.mermaid, pre.mermaid { display: flex; justify-content: center; }
 
+/* ================= Case studies ================= */
+$cs-good: #16a34a;
+$cs-bad: #dc2626;
+$cs-amber: #d97706;
+
+.cs-case { border: 1px solid rgba(127,127,140,.16); border-radius: 20px; padding: 26px 26px 8px;
+  margin: 1.8rem 0; background: linear-gradient(180deg, rgba(127,127,140,.035), transparent 60%); }
+.cs-badge { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; padding: 4px 12px; border-radius: 999px;
+  background: rgba(79,70,229,.12); color: var(--tg-accent); margin-bottom: .5rem; }
+.cs-num { font-variant-numeric: tabular-nums; color: var(--tg-accent); font-weight: 700; }
+.cs-lead { font-size: 1.05rem; color: #3a3a44; max-width: 44rem; }
+
+/* Before / after diff */
+.cs-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 1rem 0; }
+.cs-col { border-radius: 14px; padding: 14px 16px; border: 1px solid; }
+.cs-col .cs-tag { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.cs-col pre, .cs-col code { font-size: .86rem; white-space: pre-wrap; word-break: break-word; }
+.cs-col.good { border-color: rgba(22,163,74,.35); background: rgba(22,163,74,.07); }
+.cs-col.good .cs-tag { color: $cs-good; }
+.cs-col.bad { border-color: rgba(220,38,38,.35); background: rgba(220,38,38,.07); }
+.cs-col.bad .cs-tag { color: $cs-bad; }
+.cs-arrow { text-align: center; color: var(--tg-muted); font-size: 1.4rem; margin: -6px 0 2px; }
+
+/* Check chips */
+.cs-checks { display: flex; flex-wrap: wrap; gap: 8px; margin: .6rem 0 1rem; }
+.cs-chk { font-size: .82rem; font-weight: 600; padding: 5px 11px; border-radius: 8px;
+  border: 1px solid rgba(127,127,140,.2); }
+.cs-chk b { font-family: var(--bs-font-monospace, monospace); }
+.cs-chk.inv { border-color: rgba(220,38,38,.4); background: rgba(220,38,38,.08); color: $cs-bad; }
+.cs-chk.fail { border-color: rgba(217,119,6,.4); background: rgba(217,119,6,.08); color: $cs-amber; }
+
+/* Verdict panel */
+.cs-verdict { border-radius: 14px; padding: 14px 18px; margin: 1rem 0; border: 1px solid; }
+.cs-verdict .cs-vhead { font-weight: 700; font-size: 1.05rem; display: flex; align-items: center; gap: 10px; }
+.cs-verdict.block { border-color: rgba(220,38,38,.4); background: rgba(220,38,38,.06); }
+.cs-verdict.block .cs-vchip { background: $cs-bad; }
+.cs-verdict.pass { border-color: rgba(22,163,74,.4); background: rgba(22,163,74,.06); }
+.cs-verdict.pass .cs-vchip { background: $cs-good; }
+.cs-vchip { color: #fff; font-size: .72rem; font-weight: 800; letter-spacing: .05em;
+  padding: 3px 10px; border-radius: 999px; }
+.cs-reasons { margin: .5rem 0 0; padding-left: 1.1rem; }
+.cs-reasons li { margin: 2px 0; font-size: .92rem; }
+
+/* Takeaway callout */
+.cs-take { border-left: 3px solid var(--tg-accent); background: rgba(79,70,229,.05);
+  border-radius: 0 12px 12px 0; padding: 12px 18px; margin: 1.2rem 0 .4rem; font-size: .96rem; }
+.cs-take b { color: var(--tg-accent); }
+
+/* Trajectory waterfall */
+.cs-wf { width: 100%; max-width: 560px; height: auto; font-size: 11px; }
+.cs-wf text { font-family: var(--bs-font-monospace, monospace); }
+.cs-wf .cs-lbl { fill: #26262c; } .cs-wf .cs-ms { fill: var(--tg-muted); }
+.cs-agent { fill: #4f46e5; } .cs-llm { fill: #7c3aed; } .cs-tool { fill: #16a34a; }
+.cs-legend { display: flex; gap: 16px; font-size: .8rem; color: var(--tg-muted); margin: 4px 0 10px; }
+.cs-legend span::before { content: ""; display: inline-block; width: 11px; height: 11px;
+  border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+.cs-legend .a::before { background: #4f46e5; }
+.cs-legend .l::before { background: #7c3aed; }
+.cs-legend .t::before { background: #16a34a; }
+.cs-cap { display: block; font-size: .8rem; color: var(--tg-muted); margin: 2px 0 12px; }
+
+/* SPC line */
+.cs-line { width: 100%; max-width: 600px; height: auto; }
+.cs-poly { fill: none; stroke: var(--tg-accent); stroke-width: 2.5; }
+.cs-grid { stroke: rgba(127,127,140,.18); }
+.cs-pt { fill: var(--tg-accent); }
+.cs-pt.dip { fill: #dc2626; }
+
+/* Cost bars */
+.cs-barrow { display: grid; grid-template-columns: 90px 1fr auto; gap: 12px; align-items: center;
+  margin: 7px 0; font-size: .9rem; }
+.cs-barname { font-weight: 600; font-family: var(--bs-font-monospace, monospace); }
+.cs-bartrack { height: 12px; border-radius: 6px; background: rgba(127,127,140,.14); overflow: hidden; }
+.cs-barfill { display: block; height: 100%; border-radius: 6px;
+  background: linear-gradient(90deg, var(--tg-accent), var(--tg-accent-2)); }
+.cs-barval { color: var(--tg-muted); font-size: .82rem; white-space: nowrap; }
+
+/* Confusion matrix */
+.cs-cm { display: inline-grid; grid-template-columns: auto auto auto; gap: 6px; margin: .6rem 0;
+  font-size: .86rem; }
+.cs-cm .cell { padding: 12px 16px; border-radius: 10px; text-align: center; min-width: 82px; }
+.cs-cm .hd { color: var(--tg-muted); font-weight: 600; background: transparent; }
+.cs-cm .tp, .cs-cm .tn { background: rgba(22,163,74,.12); color: $cs-good; font-weight: 700; }
+.cs-cm .fp, .cs-cm .fn { background: rgba(127,127,140,.1); color: var(--tg-muted); font-weight: 700; }
+.cs-cm .big { font-size: 1.3rem; display: block; }
+
+/* Dark mode overrides for case studies */
+.quarto-dark {
+  .cs-case { border-color: rgba(255,255,255,.09);
+    background: linear-gradient(180deg, rgba(255,255,255,.04), transparent 60%); }
+  .cs-lead { color: #b6b6c2; }
+  .cs-col.good { background: rgba(22,163,74,.12); } .cs-col.bad { background: rgba(220,38,38,.12); }
+  .cs-wf .cs-lbl { fill: #e6e6ea; }
+  .cs-agent { fill: #6d66e8; } .cs-llm { fill: #9a72f0; } .cs-tool { fill: #22c55e; }
+  .cs-take { background: rgba(124,58,237,.12); }
+}
+
 /* ---------- Dark mode ---------- */
 .quarto-dark {
   --tg-muted: #9a9aa6;

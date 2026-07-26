@@ -23,8 +23,8 @@ $0 · zero API keys · OpenTelemetry-native
 :::
 
 [Try the demo](#try-it){.btn .btn-primary .btn-lg}
+[See it catch real bugs](case-studies.qmd){.btn .btn-outline-primary .btn-lg}
 [View the live report](report.html){.btn .btn-outline-primary .btn-lg}
-[GitHub](https://github.com/hoomanesteki/tracegym-ai-agent-evaluation){.btn .btn-outline-primary .btn-lg}
 :::
 
 ::: {.metric-grid}
