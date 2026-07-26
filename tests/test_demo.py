@@ -24,6 +24,9 @@ def test_demo_pipeline_produces_expected_numbers(tmp_path):
     # Every agent-suite case passes at baseline.
     assert bundle["scorecards"]["sql-analyst"]["task_success_rate"] == 1.0
     assert bundle["scorecards"]["support-rag"]["task_success_rate"] == 1.0
+    # An illustrative run history is seeded for the over-time charts.
+    hist = bundle["history"]["sql-analyst"]
+    assert len(hist) == 8 and hist[0]["synthetic"] is True
 
 
 def test_report_renders_self_contained_html(tmp_path):

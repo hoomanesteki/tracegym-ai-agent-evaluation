@@ -98,6 +98,10 @@ def run_demo(workspace: str | Path) -> dict:
         }
         regression_gallery = regression_examples(conn, blob_root, agent_suites)
 
+        from tracegym.timeseries import run_history
+
+        history = {sid: run_history(conn, sid) for sid in agent_suites}
+
         sql_baseline = suites["sql-analyst"]["baseline_run"]
         profile = build_profile(conn, sql_baseline)
         recommendations = [r.__dict__ for r in advise(conn, sql_baseline, roster=DEMO_ROSTER)]
@@ -142,6 +146,7 @@ def run_demo(workspace: str | Path) -> dict:
         "needs_review": needs_review,
         "case_details": case_details,
         "regression_gallery": regression_gallery,
+        "history": history,
         "gate_demo": {
             "bug": bug["id"],
             "verdict": gate_demo.verdict,

@@ -8,11 +8,12 @@
   :root {
     --bg: #f7f7f8; --panel: #ffffff; --ink: #1a1a1f; --muted: #6b6b76;
     --line: #e6e6ea; --accent: #4f46e5; --good: #16a34a; --bad: #dc2626;
-    --warn: #d97706; --grey: #6b7280; --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05);
+    --warn: #d97706; --grey: #6b7280; --s1: #4f46e5;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05);
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg:#0e0e11; --panel:#17171c; --ink:#ececf1; --muted:#9a9aa6;
-      --line:#26262e; --accent:#8b85ff; --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.4); }
+      --line:#26262e; --accent:#8b85ff; --s1:#6d66e8; --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.4); }
   }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
@@ -80,6 +81,27 @@
   .dot.ok { background:var(--good); } .dot.no { background:var(--bad); }
   .span-row { font-size:12px; color:var(--muted); font-family:ui-monospace,Menlo,monospace; }
   .k { color:var(--muted); font-size:12px; }
+  .trend-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+  .trend { border:1px solid var(--line); border-radius:14px; padding:14px 16px; background:var(--panel); }
+  .trend .head { display:flex; justify-content:space-between; align-items:baseline; }
+  .trend .val { font-size:1.25rem; font-weight:650; letter-spacing:-.02em; }
+  .trend .lab { color:var(--muted); font-size:12px; margin:0 0 6px; }
+  .trend .dl { font-size:12px; font-weight:650; }
+  .trend .dl.up { color:var(--good); } .trend .dl.down { color:var(--bad); } .trend .dl.flat { color:var(--muted); }
+  svg.line { width:100%; height:auto; display:block; }
+  svg.line .grid { stroke:var(--line); stroke-width:1; }
+  svg.line polyline { fill:none; stroke:var(--s1); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  svg.line .end { fill:var(--s1); stroke:var(--panel); stroke-width:2; }
+  svg.line .slot rect { fill:transparent; }
+  svg.line .slot:hover rect { fill:color-mix(in srgb,var(--s1) 10%,transparent); }
+  svg.line .slot circle { opacity:0; fill:var(--s1); stroke:var(--panel); stroke-width:2; }
+  svg.line .slot:hover circle { opacity:1; }
+  .synthetic-note { color:var(--warn); font-size:12px; }
+  .loop { display:flex; gap:10px; flex-wrap:wrap; }
+  .loop .node { flex:1; min-width:180px; border:1px solid var(--line); border-radius:12px; padding:12px 14px; background:var(--panel); }
+  .loop .node b { display:block; font-size:14px; margin-bottom:2px; }
+  .loop .node .sub { color:var(--muted); font-size:12px; display:block; margin-bottom:8px; }
+  .loop .arrow { align-self:center; color:var(--muted); font-size:20px; }
 </style>
 </head>
 <body>
@@ -96,6 +118,47 @@
     <div class="tile"><div class="n">${{ '%.4f'|format(total_cost) }}</div><div class="l">Counterfactual spend</div></div>
     <div class="tile"><div class="n">{{ needs_review }}</div><div class="l">Cases routed to review</div></div>
   </div>
+
+  <section>
+    <h2>Monitor &middot; control &middot; optimize</h2>
+    <div class="loop">
+      <div class="node"><b>Monitor</b><span class="sub">replay &middot; score &middot; profile</span><span class="chip good">{{ loop.determinism_pct }}% deterministic</span></div>
+      <div class="arrow">&rarr;</div>
+      <div class="node"><b>Control</b><span class="sub">the gate decides</span><span class="chip {{ loop.gate_verdict }}">{{ loop.gate_verdict }}</span> <span class="k">&middot; {{ loop.needs_review }} to human review</span></div>
+      <div class="arrow">&rarr;</div>
+      <div class="node"><b>Optimize</b><span class="sub">advise &middot; validate &middot; promote</span><span class="chip SAFE">{{ loop.n_safe }} SAFE</span></div>
+    </div>
+    <div class="note">Automated: the gate blocks a high-confidence regression. Human-notify: cases routed to review. Hybrid: SAFE optimizations wait for a human to apply.</div>
+  </section>
+
+  {% if trends %}
+  <section>
+    <h2>Performance over time</h2>
+    {% for suite, t in trends.items() %}
+    <div class="row" style="margin:6px 0 12px">
+      <div><strong>{{ suite }}</strong> <span class="k">&middot; {{ t.runs }} runs</span></div>
+      {% if t.synthetic %}<span class="synthetic-note">illustrative history seeded by the demo</span>{% endif %}
+    </div>
+    <div class="trend-grid">
+      {% for c in t.charts %}{% if c.chart %}
+      <div class="trend">
+        <div class="head">
+          <span class="val">{{ '%g'|format(c.latest) }}</span>
+          {% if c.delta_good is not none %}<span class="dl {{ 'up' if c.delta_good else 'down' }}">{{ '%+g'|format(c.delta) }}</span>{% else %}<span class="dl flat">no change</span>{% endif %}
+        </div>
+        <div class="lab">{{ c.label }}</div>
+        <svg class="line" viewBox="0 0 {{ c.chart.width }} {{ c.chart.height }}" preserveAspectRatio="none" role="img" aria-label="{{ c.label }} across recent runs">
+          {% for g in c.chart.grid %}<line class="grid" x1="0" y1="{{ g.y }}" x2="{{ c.chart.width }}" y2="{{ g.y }}"/>{% endfor %}
+          <polyline points="{{ c.chart.points }}"/>
+          {% for s in c.chart.slots %}<g class="slot"><rect x="{{ s.x }}" y="0" width="{{ s.w }}" height="{{ c.chart.height }}"><title>{{ s.title }}</title></rect><circle cx="{{ s.cx }}" cy="{{ s.cy }}" r="3"/></g>{% endfor %}
+          <circle class="end" cx="{{ c.chart.last.x }}" cy="{{ c.chart.last.y }}" r="4"/>
+        </svg>
+      </div>
+      {% endif %}{% endfor %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
 
   <section>
     <h2>Benchmark vs reference &middot; the gate</h2>

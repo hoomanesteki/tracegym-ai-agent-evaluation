@@ -211,6 +211,58 @@ def calibrate(workspace: Path = typer.Option(DEMO_DIR)) -> None:
     console.print_json(json.dumps(rep))
 
 
+_SPARK = "▁▂▃▄▅▆▇█"
+
+
+def _sparkline(vals: list[float]) -> str:
+    if not vals:
+        return ""
+    lo, hi = min(vals), max(vals)
+    if hi - lo < 1e-9:
+        return _SPARK[0] * len(vals)
+    steps = len(_SPARK) - 1
+    return "".join(_SPARK[min(steps, int((v - lo) / (hi - lo) * steps))] for v in vals)
+
+
+@app.command()
+def trend(
+    workspace: Path = typer.Option(DEMO_DIR),
+    suite: str = typer.Option("sql-analyst"),
+    metric: str = typer.Option(
+        "mean_score", help="mean_score|task_success_rate|cost_usd|p95_latency_ms|invariant_failures"
+    ),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show a metric's trend across recent runs (sparkline + per-run delta)."""
+    from tracegym.timeseries import METRICS, metric_series, run_history
+
+    conn, _ = _with_workspace(workspace)
+    hist = run_history(conn, suite)
+    if json_out:
+        console.print_json(json.dumps({"suite": suite, "metric": metric, "history": hist}))
+        return
+    if len(hist) < 2:
+        console.print(f"Not enough run history for {suite} yet (need 2+ runs).")
+        raise typer.Exit(0)
+    if metric not in METRICS:
+        console.print(f"Unknown metric. Options: {', '.join(METRICS)}")
+        raise typer.Exit(1)
+    vals = metric_series(hist, metric)
+    label, _dir = METRICS[metric]
+    tag = " (illustrative)" if hist[0].get("synthetic") else ""
+    console.print(f"[bold]{suite}[/bold] · {label} · {len(hist)} runs{tag}")
+    console.print(f"  {_sparkline(vals)}  latest={vals[-1]:g}")
+    table = Table("when", "commit", label, "delta")
+    prev = None
+    for h in hist:
+        v = h[metric]
+        table.add_row(
+            h["created_at"], h["git_sha"], f"{v:g}", "" if prev is None else f"{v - prev:+g}"
+        )
+        prev = v
+    console.print(table)
+
+
 @app.command()
 def cases(
     workspace: Path = typer.Option(DEMO_DIR),

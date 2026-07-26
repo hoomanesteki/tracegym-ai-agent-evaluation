@@ -128,6 +128,148 @@ def _meta_cases(rubric_sha: str) -> list[dict]:
     return cases
 
 
+# A short, deliberately illustrative history so the "performance over time" charts
+# tell a story on a fresh demo: a regression lands (score dips, invariant failures
+# spike), the gate catches it, it is fixed, then the advisor trims cost. Real
+# projects get a true series as each CI run appends one frozen run.
+_HISTORY = {
+    "sql-analyst": [
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000102,
+            "p95_latency_ms": 0.11,
+            "invariant_failures": 0,
+        },
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000102,
+            "p95_latency_ms": 0.11,
+            "invariant_failures": 0,
+        },
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000108,
+            "p95_latency_ms": 0.12,
+            "invariant_failures": 0,
+        },
+        {
+            "mean_score": 0.83,
+            "task_success_rate": 0.75,
+            "cost_usd": 0.000108,
+            "p95_latency_ms": 0.12,
+            "invariant_failures": 2,
+        },
+        {
+            "mean_score": 0.83,
+            "task_success_rate": 0.75,
+            "cost_usd": 0.000109,
+            "p95_latency_ms": 0.12,
+            "invariant_failures": 2,
+        },
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000108,
+            "p95_latency_ms": 0.12,
+            "invariant_failures": 0,
+        },
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000091,
+            "p95_latency_ms": 0.11,
+            "invariant_failures": 0,
+        },
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000091,
+            "p95_latency_ms": 0.11,
+            "invariant_failures": 0,
+        },
+    ],
+    "support-rag": [
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000140,
+            "p95_latency_ms": 0.06,
+            "invariant_failures": 0,
+        },
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000140,
+            "p95_latency_ms": 0.06,
+            "invariant_failures": 0,
+        },
+        {
+            "mean_score": 0.90,
+            "task_success_rate": 0.87,
+            "cost_usd": 0.000141,
+            "p95_latency_ms": 0.06,
+            "invariant_failures": 1,
+        },
+        {
+            "mean_score": 0.90,
+            "task_success_rate": 0.87,
+            "cost_usd": 0.000141,
+            "p95_latency_ms": 0.06,
+            "invariant_failures": 1,
+        },
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000140,
+            "p95_latency_ms": 0.06,
+            "invariant_failures": 0,
+        },
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000140,
+            "p95_latency_ms": 0.06,
+            "invariant_failures": 0,
+        },
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000133,
+            "p95_latency_ms": 0.06,
+            "invariant_failures": 0,
+        },
+        {
+            "mean_score": 1.0,
+            "task_success_rate": 1.0,
+            "cost_usd": 0.000133,
+            "p95_latency_ms": 0.06,
+            "invariant_failures": 0,
+        },
+    ],
+}
+
+
+def _seed_history(conn) -> None:
+    """Insert a short illustrative run history (mode='history') per agent suite."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    for sid, points in _HISTORY.items():
+        n = len(points)
+        for i, p in enumerate(points):
+            created = (now - timedelta(days=n - i)).isoformat()
+            summary = {"cases": 12 if sid == "sql-analyst" else 15, "tool_calls": 12, **p}
+            conn.execute(
+                "INSERT OR REPLACE INTO runs (id, suite_id, mode, model, git_sha, created_at, summary) "
+                "VALUES (?, ?, 'history', 'demo', ?, ?, ?)",
+                (f"hist-{sid}-{i:02d}", sid, f"c{i:06x}"[:7], created, json.dumps(summary)),
+            )
+    conn.commit()
+
+
 def _seed_canary_calibration(conn, blob_root, base_run: str, spec: dict) -> None:
     """Judge each canary and record its gold verdict as a label.
 
@@ -218,6 +360,7 @@ def build_demodata(dest: str | Path) -> dict:
                 )
             promote(conn, f"baseline-{sid}", sid, base_run)
             spec["baseline_run"] = base_run
+        _seed_history(conn)
         conn.commit()
         conn.close()
     finally:

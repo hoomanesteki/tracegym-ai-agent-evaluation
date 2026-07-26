@@ -15,6 +15,9 @@ from pathlib import Path
 
 from jinja2 import Environment, select_autoescape
 
+from tracegym.report.charts import linechart
+from tracegym.timeseries import METRICS, delta, metric_series
+
 _TEMPLATE = (
     files("tracegym.report").joinpath("templates/report.html.j2").read_text(encoding="utf-8")
 )
@@ -100,6 +103,45 @@ def _cost_by_model(profile: dict) -> list[dict]:
     ]
 
 
+def _trends(history_by_suite: dict) -> dict:
+    out = {}
+    for sid, hist in (history_by_suite or {}).items():
+        if len(hist) < 2:
+            continue
+        labels = [f"{h['created_at']} {h['git_sha']}" for h in hist]
+        charts = []
+        for metric, (label, direction) in METRICS.items():
+            vals = metric_series(hist, metric)
+            d = delta(hist, metric)
+            good = None if d == 0 else (d > 0 if direction == "up" else d < 0)
+            charts.append(
+                {
+                    "metric": metric,
+                    "label": label,
+                    "latest": vals[-1],
+                    "delta": d,
+                    "delta_good": good,
+                    "chart": linechart(vals, labels=labels),
+                }
+            )
+        out[sid] = {
+            "runs": len(hist),
+            "synthetic": hist[0].get("synthetic", False),
+            "charts": charts,
+        }
+    return out
+
+
+def _loop(bundle: dict) -> dict:
+    recs = bundle.get("recommendations", [])
+    return {
+        "determinism_pct": bundle.get("determinism", {}).get("pct", 0),
+        "gate_verdict": bundle["gate_demo"]["verdict"],
+        "needs_review": bundle.get("needs_review", 0),
+        "n_safe": sum(1 for r in recs if r.get("status") == "SAFE"),
+    }
+
+
 def build_context(bundle: dict, title: str) -> dict:
     recall = bundle["recall"]
     cal = bundle.get("calibration", {})
@@ -125,6 +167,8 @@ def build_context(bundle: dict, title: str) -> dict:
             sid: [_case_view(d) for d in cases]
             for sid, cases in bundle.get("case_details", {}).items()
         },
+        "trends": _trends(bundle.get("history", {})),
+        "loop": _loop(bundle),
     }
 
 

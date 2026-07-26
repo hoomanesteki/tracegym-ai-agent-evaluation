@@ -178,15 +178,19 @@ def run_suite(
             ),
         )
 
+    # Snapshot the scorecard into the run's summary so a run row is self-describing
+    # for over-time trends even if its per-case results are later pruned.
+    from tracegym.metrics import suite_scorecard
+
+    sc = suite_scorecard(conn, run_id)
     summary = {
         "cases": len(cases),
         "mean_score": round(sum(scores) / len(scores), 6) if scores else 0.0,
-        "cost_usd": round(
-            conn.execute(
-                "SELECT COALESCE(SUM(cost_usd), 0) FROM results WHERE run_id = ?", (run_id,)
-            ).fetchone()[0],
-            8,
-        ),
+        "task_success_rate": sc.get("task_success_rate", 0.0),
+        "cost_usd": sc.get("total_cost_usd", 0.0),
+        "p95_latency_ms": sc.get("latency_ms", {}).get("p95", 0.0),
+        "invariant_failures": sc.get("invariant_failures", 0),
+        "tool_calls": sc.get("total_tool_calls", 0),
     }
     conn.execute(
         "INSERT INTO runs (id, suite_id, mode, model, git_sha, config_sha, created_at, summary) "
