@@ -1,5 +1,5 @@
 ---
-pagetitle: "TraceGym — deterministic, keyless agent evaluation"
+pagetitle: "TraceGym: deterministic, keyless agent evaluation"
 page-layout: full
 toc: false
 ---

@@ -1,6 +1,6 @@
 ---
 title: "Calibration"
-pagetitle: "TraceGym — judge calibration"
+pagetitle: "TraceGym: judge calibration"
 ---
 
 An LLM judge is only useful if you know how far to trust it. TraceGym measures

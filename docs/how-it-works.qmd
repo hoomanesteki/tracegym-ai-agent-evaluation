@@ -1,6 +1,6 @@
 ---
 title: "How it works"
-pagetitle: "TraceGym — how it works"
+pagetitle: "TraceGym: how it works"
 ---
 
 Five stages, one guarantee: what runs in CI is byte-identical to what was
@@ -77,3 +77,23 @@ configurations. A suggestion is marked **SAFE** only after a deterministic repla
 proves quality did not regress. Judge downgrades are validated by verdict
 agreement, not the score gate, because letting a cheaper judge grade itself
 against the gate would be circular.
+
+## Monitor, control, optimize
+
+The gate is the automated tier. Softer signals do not block a merge; they route
+to a **human-notify** tier. A `WARN` verdict marks a mean dip whose CI still
+crosses zero or a cost rise in the soft band. A review queue (`tg review`)
+collects the cases the judge was unsure about and the gate warnings; resolving a
+judge-review item with a label writes it to the calibration set, so a human
+decision tightens the gate next time. Drift detection (`tg trend --check`) runs
+EWMA and CUSUM control charts over the run history to catch a slow slide the
+pairwise gate cannot see, separates an ongoing drift from a recovered excursion,
+and reports the change point.
+
+## Multi-agent trajectories
+
+Wrap a stage in `rt.agent(name)` and the tool and LLM spans emitted inside it
+nest under an agent span. Cost, latency, and tool use are then attributed per
+agent by walking each span to its nearest agent ancestor, and the report draws
+the trajectory as a waterfall, so a regression can be traced to the sub-agent
+that caused it.

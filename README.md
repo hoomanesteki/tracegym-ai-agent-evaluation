@@ -86,12 +86,32 @@ flowchart LR
   model, or a deterministic domain solver. The SQL analyst is graded by execution
   accuracy against a gold query run over the bundled database.
 - **MCP-aware.** MCP tool calls are captured, replayed, and scored like any tool.
-  **Multi-agent-ready** through nested agent spans.
+- **Multi-agent.** Wrap work in `rt.agent(name)` and its tool and LLM spans nest
+  under an agent span, so cost, latency, and tool use are attributed per agent by
+  walking each span to its nearest agent ancestor. The report draws the trajectory
+  as a waterfall, so a regression can be traced to the sub-agent that caused it.
 - **OpenTelemetry-native** and wire-format compatible: emit `gen_ai.*` spans, or
   ingest them from any OTel SDK through the SQLite exporter.
-- **Statistical rigor:** paired-bootstrap significance, Cohen's κ reported with
-  raw agreement and PABAK, and a pre-decided calibration ladder that demotes the
-  judge to advisory rather than fake a number.
+- **Statistical rigor:** paired-bootstrap significance, an exact sign test for a
+  consistent pass/fail flip, Cohen's κ reported with raw agreement and PABAK, and a
+  pre-decided calibration ladder that demotes the judge to advisory rather than
+  fake a number.
+
+## Monitor, control, optimize
+
+The gate is the automated tier: it blocks only a high-confidence regression (a new
+invariant failure, a mean drop whose bootstrap CI stays below zero, a one-directional
+pass/fail flip, or a cost jump past the hard limit). Softer signals do not block a
+merge; they route to a **human-notify** tier instead.
+
+- **A `WARN` verdict** for a mean dip whose CI still crosses zero or a cost rise in
+  the soft band. In CI it annotates rather than fails the check.
+- **A review queue** (`tg review`) for the cases the judge was unsure about and the
+  gate warnings. Resolving a judge-review item with a label writes it to the
+  calibration set, so a human decision tightens the gate next time.
+- **Drift detection** (`tg trend --check`) runs EWMA and CUSUM control charts over
+  the run history to catch a slow slide the pairwise gate cannot see, tells an
+  ongoing drift apart from a recovered excursion, and reports the change point.
 
 ## Use it on your own agent
 
@@ -99,6 +119,8 @@ flowchart LR
 uv add "git+https://github.com/hoomanesteki/tracegym-ai-agent-evaluation"
 tg record --proxy --port 8080     # point your agent's base_url here, run it once
 tg gate --vs baseline             # exit 1 on a regression, wire into CI
+tg trend --check                  # SPC drift check across the run history
+tg review                         # the human-notify queue: unsure judges, warnings
 tg advise                         # validated cheaper/faster suggestions
 tg report                         # open the HTML report
 ```
@@ -142,6 +164,9 @@ tg diff sql_delete       # a seeded bug: baseline vs buggy + the check that caug
 - The bundled demo uses deterministic stand-in agents and a local judge so it runs
   at $0. A real Cohen's κ needs your human labels against a live cross-family
   judge. Python only, no hosted UI.
+- The over-time trend and drift charts in the demo run on a short seeded history
+  (labeled illustrative in the report) because `tg demo` rebuilds its workspace
+  each run. On a real project the series grows one frozen run per CI build.
 
 ## Install
 
