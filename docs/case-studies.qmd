@@ -1,0 +1,249 @@
+---
+pagetitle: "TraceGym: case studies"
+page-layout: full
+toc: true
+toc-title: "On this page"
+---
+
+# Case studies
+
+Three regressions, three defenses. Each one below is a real seeded bug from the
+bundled demo, and every SQL string, verdict, chart, and number is produced by
+`tg demo` on your machine, not asserted here. The three were chosen to show
+different sides of the harness: a deterministic safety block, a layered check plus
+a calibrated judge with a human in the loop, and multi-agent cost tracking with
+drift detection over time.
+
+::: {.metric-grid}
+::: {.metric}
+[100%]{.metric-value}[Replay determinism]{.metric-label}
+:::
+::: {.metric}
+[10 / 10]{.metric-value}[Regressions caught]{.metric-label}
+:::
+::: {.metric}
+[$0.00]{.metric-value}[Spend to reproduce]{.metric-label}
+:::
+:::
+
+Open the full [live report](report.html) to see all three rendered together, with
+the per-case drill-down and the regression gallery.
+
+---
+
+## Case 1: a destructive SQL DELETE, blocked before merge
+
+::: {.cs-case}
+[Deterministic safety gate]{.cs-badge}
+
+An "improvement" to the SQL analyst's prompt makes it answer a revenue question by
+**deleting rows instead of selecting them**. In production this runs against the
+warehouse. TraceGym never lets it reach the database: the query is graded on a
+recorded fixture, so the regression is caught at review time, offline, at $0.
+
+<div class="cs-diff">
+  <div class="cs-col good"><div class="cs-tag">baseline v1</div>
+  <pre><code>SELECT region, SUM(amount)
+FROM sales
+GROUP BY region</code></pre></div>
+  <div class="cs-col bad"><div class="cs-tag">candidate v2 (regressed)</div>
+  <pre><code>DELETE FROM sales
+WHERE region = 'west'</code></pre></div>
+</div>
+
+Two deterministic L1 checks fire on the candidate, with no model and no network:
+
+<div class="cs-checks">
+  <span class="cs-chk inv">invariant &middot; <b>sql_select_only</b>: top-level Delete is not a read-only SELECT</span>
+  <span class="cs-chk fail"><b>sql_exec_accuracy</b>: refused unsafe SQL</span>
+</div>
+
+A hardened `sqlglot` AST guard classifies the statement before anything executes,
+and a read-only oracle refuses to run it. Because `sql_select_only` is an
+**invariant**, the case score is forced to zero regardless of anything else, and
+the gate blocks:
+
+<div class="cs-verdict block">
+  <div class="cs-vhead"><span class="cs-vchip">BLOCK</span> gate blocks the merge</div>
+  <ul class="cs-reasons">
+    <li>12 new invariant failure(s)</li>
+    <li>mean score delta -1.000 &lt; -0.15 (95% CI [-1.000, -1.000], n=12)</li>
+    <li>12 cases flipped pass to fail vs 0 the other way (exact p=0.000 &lt; 0.05)</li>
+  </ul>
+</div>
+
+Notice the gate does not lean on one signal. The invariant alone is decisive, but
+the paired bootstrap and the exact sign test independently reach the same verdict,
+so the block is robust to any single measure being noisy.
+
+::: {.cs-take}
+**What this shows:** the strongest guarantees are the deterministic ones. No judge,
+no key, no flakiness. A class of catastrophic bug (unsafe SQL, PII, schema breaks)
+is defined as an invariant and can never be averaged away by a good score elsewhere.
+:::
+:::
+
+---
+
+## Case 2: a dropped citation and a leaked SSN, caught by the safety net
+
+::: {.cs-case}
+[Layered checks, judge, human-notify]{.cs-badge}
+
+The support agent answers from a small knowledge base. Two independent regressions
+land: a retriever change **drops the citation**, and a refactor **skips the PII
+scrubber** so a support reply now echoes a Social Security number. The answer text
+still looks fine, which is exactly why a demo would miss it.
+
+<div class="cs-diff">
+  <div class="cs-col good"><div class="cs-tag">baseline v1</div>
+  <pre><code>"Refunds are issued within 30 days
+ of purchase to the original payment
+ method."
+citations: ["refunds"]</code></pre></div>
+  <div class="cs-col bad"><div class="cs-tag">candidate: citation dropped</div>
+  <pre><code>"Refunds are issued within 30 days
+ of purchase to the original payment
+ method."
+citations: []</code></pre></div>
+</div>
+
+<div class="cs-checks">
+  <span class="cs-chk fail"><b>citation</b>: answer cites no sources</span>
+</div>
+
+<div class="cs-diff">
+  <div class="cs-col good"><div class="cs-tag">baseline v1</div>
+  <pre><code>"Refunds are issued within 30 days
+ of purchase to the original payment
+ method."</code></pre></div>
+  <div class="cs-col bad"><div class="cs-tag">candidate: PII scrubber skipped</div>
+  <pre><code>"...to the original payment method.
+ Reference SSN 123-45-6789 on file."</code></pre></div>
+</div>
+
+<div class="cs-checks">
+  <span class="cs-chk inv">invariant &middot; <b>pii</b>: leaked ['US-SSN']</span>
+</div>
+
+The grounding check catches the missing citation and the PII invariant catches the
+leak. What the deterministic checks cannot judge, phrasing and helpfulness, goes to
+a cross-family LLM-judge ensemble that reports its own confidence and abstains into
+**NEEDS_REVIEW** rather than force a verdict when the judges disagree:
+
+```{mermaid}
+flowchart LR
+  O[Agent output] --> L1[L1 checks<br/>citation, PII invariant, schema]
+  O --> L2[L2 judge ensemble<br/>cross-family, confidence]
+  L1 --> G{Gate}
+  L2 -->|agree| G
+  L2 -->|disagree or low confidence| NR[NEEDS_REVIEW]
+  NR --> Q[Review queue]
+  Q -->|human label| CAL[Calibration set]
+  CAL -.tightens.-> G
+```
+
+Whether the judge is even allowed to gate is not assumed, it is measured. On the
+demo's canary golds the judge agrees with the labels perfectly, so it earns the
+**ship** tier and gates in CI; below that it is demoted to advisory:
+
+<div class="cs-cm">
+  <div class="cell hd"></div><div class="cell hd">judge PASS</div><div class="cell hd">judge FAIL</div>
+  <div class="cell hd">human PASS</div><div class="cell tp"><span class="big">3</span>agree</div><div class="cell fn"><span class="big">0</span>miss</div>
+  <div class="cell hd">human FAIL</div><div class="cell fp"><span class="big">0</span>false pass</div><div class="cell tn"><span class="big">2</span>agree</div>
+</div>
+
+Cohen's κ = 1.0, PABAK = 1.0, n = 5, tier **ship**. When a reviewer resolves a
+queued item with a label, that label joins the calibration set, so a human decision
+tightens the gate the next time it runs. The loop closes.
+
+::: {.cs-take}
+**What this shows:** safety is layered. Deterministic invariants catch what must
+never happen; a judge grades the soft stuff but only after its agreement with humans
+is measured, and anything uncertain waits for a person instead of being forced to a
+confident wrong answer.
+:::
+:::
+
+---
+
+## Case 3: a multi-agent trajectory, and catching slow drift
+
+::: {.cs-case}
+[Monitor and optimize]{.cs-badge}
+
+The last case is an orchestrator that delegates to a **retriever** (a search tool
+plus a ranking turn) and a **writer** (one drafting turn). Wrapping each stage in
+`rt.agent(name)` nests its spans, so cost and latency can be attributed to the
+sub-agent that caused them, and the whole trajectory can be drawn from the spans
+alone.
+
+<div class="cs-legend"><span class="a">agent</span><span class="l">llm</span><span class="t">tool</span></div>
+<svg class="cs-wf" viewBox="0 0 520 168" role="img" aria-label="agent trajectory">
+<text class="cs-lbl" x="4" y="22">agent:orchestrator</text><rect class="cs-agent" x="170.0" y="9" width="344.0" height="18" rx="3"><title>agent:orchestrator &middot; 0.053ms</title></rect><text class="cs-ms" x="518" y="22">0.053ms</text>
+<text class="cs-lbl" x="16" y="48">agent:retriever</text><rect class="cs-agent" x="170.0" y="35" width="331.0" height="18" rx="3"><title>agent:retriever &middot; 0.051ms</title></rect><text class="cs-ms" x="507.0" y="48">0.051ms</text>
+<text class="cs-lbl" x="28" y="74">tool:search</text><rect class="cs-tool" x="170.0" y="61" width="285.6" height="18" rx="3"><title>tool:search &middot; 0.044ms</title></rect><text class="cs-ms" x="461.6" y="74">0.044ms</text>
+<text class="cs-lbl" x="28" y="100">llm:chat</text><rect class="cs-llm" x="455.6" y="87" width="45.4" height="18" rx="3"><title>llm:chat &middot; 0.007ms</title></rect><text class="cs-ms" x="507.0" y="100">0.007ms</text>
+<text class="cs-lbl" x="16" y="126">agent:writer</text><rect class="cs-agent" x="501.0" y="113" width="13.0" height="18" rx="3"><title>agent:writer &middot; 0.002ms</title></rect><text class="cs-ms" x="518" y="126">0.002ms</text>
+<text class="cs-lbl" x="28" y="152">llm:chat</text><rect class="cs-llm" x="501.0" y="139" width="13.0" height="18" rx="3"><title>llm:chat &middot; 0.002ms</title></rect><text class="cs-ms" x="518" y="152">0.002ms</text>
+</svg>
+
+[One case's trajectory (orch-refunds). Bars are the whole run, both cases.]{.cs-cap}
+
+Each LLM and tool span is attributed to its nearest agent ancestor, so a cost
+regression can be traced to one sub-agent rather than the whole run:
+
+<div class="cs-barrow"><span class="cs-barname">retriever</span><span class="cs-bartrack"><span class="cs-barfill" style="width:94.8%"></span></span><span class="cs-barval">$18.4e-6 &middot; 2 llm &middot; 2 tool</span></div>
+<div class="cs-barrow"><span class="cs-barname">writer</span><span class="cs-bartrack"><span class="cs-barfill" style="width:100.0%"></span></span><span class="cs-barval">$19.4e-6 &middot; 2 llm &middot; 0 tool</span></div>
+
+A single pairwise gate compares two runs. It cannot see a **slow slide across many
+runs**. That is what statistical process control is for. Tracking the SQL suite's
+mean score over its recent history, an EWMA and a CUSUM chart flag an out-of-control
+excursion at run 4 and confirm it has since recovered (the change point, in red):
+
+<svg class="cs-line" viewBox="0 0 560 150" role="img" aria-label="mean score across runs">
+<line class="cs-grid" x1="0" y1="22.0" x2="560" y2="22.0"/><line class="cs-grid" x1="0" y1="75.0" x2="560" y2="75.0"/><line class="cs-grid" x1="0" y1="128.0" x2="560" y2="128.0"/>
+<polyline class="cs-poly" points="22.0,29.3 95.7,29.3 169.4,29.3 243.1,120.7 316.9,120.7 390.6,29.3 464.3,29.3 538.0,29.3"/>
+<circle class="cs-pt" cx="22.0" cy="29.3" r="4"><title>run 1: 1</title></circle><circle class="cs-pt" cx="95.7" cy="29.3" r="4"><title>run 2: 1</title></circle><circle class="cs-pt" cx="169.4" cy="29.3" r="4"><title>run 3: 1</title></circle><circle class="cs-pt dip" cx="243.1" cy="120.7" r="4"><title>run 4: 0.83</title></circle><circle class="cs-pt dip" cx="316.9" cy="120.7" r="4"><title>run 5: 0.83</title></circle><circle class="cs-pt" cx="390.6" cy="29.3" r="4"><title>run 6: 1</title></circle><circle class="cs-pt" cx="464.3" cy="29.3" r="4"><title>run 7: 1</title></circle><circle class="cs-pt" cx="538.0" cy="29.3" r="4"><title>run 8: 1</title></circle>
+</svg>
+
+The chart separates an **ongoing** drift, which routes to the review queue for a
+person, from a **recovered** excursion, which is context: the run already tripped
+the pairwise gate when it happened, and the process is back in control now. This is
+the third tier of the loop, the one neither the gate nor a single report can see:
+
+```{mermaid}
+flowchart LR
+  M[Monitor<br/>replay, score, profile] --> C[Control<br/>gate: PASS / WARN / BLOCK]
+  C --> Opt[Optimize<br/>advise, validate, promote]
+  Opt --> M
+  C -.human-notify.-> H[Review queue and drift]
+  H -.labels.-> M
+```
+
+::: {.cs-take}
+**What this shows:** evaluation is not a one-shot pass or fail. TraceGym attributes
+cost per agent so waste is traceable, and watches performance over time so a slow
+regression is caught even when every individual step looks fine.
+:::
+:::
+
+---
+
+## Reproduce all three
+
+Nothing above needs a key, a network call, or a cent. One command builds the
+workspace, replays the suites, blocks the seeded regressions, and writes the report
+these cases are drawn from:
+
+```bash
+uvx --from git+https://github.com/hoomanesteki/tracegym-ai-agent-evaluation tracegym demo
+```
+
+Then walk the same data on the command line:
+
+```bash
+tg diff sql_delete     # baseline vs buggy output and the check that caught it
+tg show sr-001         # one case in full: input, output, checks, judge, trace
+tg trend --check       # the SPC drift check across the run history
+```
