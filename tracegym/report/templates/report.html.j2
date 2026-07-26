@@ -40,8 +40,13 @@
     border-radius:999px; }
   .chip.good,.chip.PASS,.chip.SAFE { background:color-mix(in srgb,var(--good) 15%,transparent); color:var(--good); }
   .chip.bad,.chip.BLOCK,.chip.REGRESSES { background:color-mix(in srgb,var(--bad) 15%,transparent); color:var(--bad); }
-  .chip.INCONCLUSIVE { background:color-mix(in srgb,var(--warn) 15%,transparent); color:var(--warn); }
+  .chip.INCONCLUSIVE,.chip.WARN { background:color-mix(in srgb,var(--warn) 15%,transparent); color:var(--warn); }
   .chip.ADVISORY_ONLY { background:color-mix(in srgb,var(--grey) 18%,transparent); color:var(--grey); }
+  .sev { display:inline-block; font-size:11px; font-weight:650; text-transform:uppercase;
+    letter-spacing:.03em; padding:2px 8px; border-radius:999px; }
+  .sev.high { background:color-mix(in srgb,var(--bad) 15%,transparent); color:var(--bad); }
+  .sev.med { background:color-mix(in srgb,var(--warn) 15%,transparent); color:var(--warn); }
+  .sev.low { background:color-mix(in srgb,var(--grey) 18%,transparent); color:var(--grey); }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th,td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); }
   th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
@@ -102,6 +107,16 @@
   .loop .node b { display:block; font-size:14px; margin-bottom:2px; }
   .loop .node .sub { color:var(--muted); font-size:12px; display:block; margin-bottom:8px; }
   .loop .arrow { align-self:center; color:var(--muted); font-size:20px; }
+  svg.waterfall { width:100%; height:auto; max-width:560px; font-size:11px; }
+  svg.waterfall .lbl { fill:var(--ink); font-variant-numeric:tabular-nums; }
+  svg.waterfall .agent { fill:var(--s1); }
+  svg.waterfall .llm { fill:var(--accent); }
+  svg.waterfall .tool { fill:var(--good); }
+  svg.waterfall .ms { fill:var(--muted); }
+  svg.waterfall .bad { fill:var(--bad); }
+  .legend { display:flex; gap:14px; font-size:12px; color:var(--muted); margin:4px 0 10px; }
+  .legend span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:middle; }
+  .legend .a::before { background:var(--s1); } .legend .l::before { background:var(--accent); } .legend .t::before { background:var(--good); }
 </style>
 </head>
 <body>
@@ -124,19 +139,50 @@
     <div class="loop">
       <div class="node"><b>Monitor</b><span class="sub">replay &middot; score &middot; profile</span><span class="chip good">{{ loop.determinism_pct }}% deterministic</span></div>
       <div class="arrow">&rarr;</div>
-      <div class="node"><b>Control</b><span class="sub">the gate decides</span><span class="chip {{ loop.gate_verdict }}">{{ loop.gate_verdict }}</span> <span class="k">&middot; {{ loop.needs_review }} to human review</span></div>
+      <div class="node"><b>Control</b><span class="sub">the gate decides</span><span class="chip {{ loop.gate_verdict }}">{{ loop.gate_verdict }}</span> <span class="k">&middot; {{ loop.review_open }} in the review queue</span></div>
       <div class="arrow">&rarr;</div>
       <div class="node"><b>Optimize</b><span class="sub">advise &middot; validate &middot; promote</span><span class="chip SAFE">{{ loop.n_safe }} SAFE</span></div>
     </div>
     <div class="note">Automated: the gate blocks a high-confidence regression. Human-notify: cases routed to review. Hybrid: SAFE optimizations wait for a human to apply.</div>
   </section>
 
+  {% if review %}
+  <section>
+    <h2>Needs attention &middot; the human-notify tier</h2>
+    <p class="note" style="margin:0 0 12px">
+      These signals do not block a merge on their own; they wait for a person.
+      Resolving a judge-review item with a label feeds the calibration set, so a
+      human decision here tightens the gate next time. Clear them with
+      <code>tg review resolve &lt;id&gt; --label pass|fail</code>.
+    </p>
+    <table>
+      <thead><tr><th>Signal</th><th>Severity</th><th>Ref</th><th>Why</th></tr></thead>
+      <tbody>
+        {% for r in review %}
+        <tr>
+          <td>{{ r.kind }}</td>
+          <td><span class="sev {{ r.severity }}">{{ r.severity }}</span></td>
+          <td>{{ r.ref }}</td>
+          <td>{{ r.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
   {% if trends %}
   <section>
     <h2>Performance over time</h2>
     {% for suite, t in trends.items() %}
     <div class="row" style="margin:6px 0 12px">
-      <div><strong>{{ suite }}</strong> <span class="k">&middot; {{ t.runs }} runs</span></div>
+      <div>
+        <strong>{{ suite }}</strong> <span class="k">&middot; {{ t.runs }} runs</span>
+        {% if t.spc %}
+          {% if t.spc.status == 'drift' %}<span class="chip WARN">drift: {{ t.spc.label }}{% if t.spc.shift_run %} near run {{ t.spc.shift_run }}{% endif %}</span>
+          {% else %}<span class="chip good">SPC: recovered excursion{% if t.spc.shift_run %} at run {{ t.spc.shift_run }}{% endif %}</span>{% endif %}
+        {% else %}<span class="chip good">SPC: in control</span>{% endif %}
+      </div>
       {% if t.synthetic %}<span class="synthetic-note">illustrative history seeded by the demo</span>{% endif %}
     </div>
     <div class="trend-grid">
@@ -157,6 +203,44 @@
       {% endif %}{% endfor %}
     </div>
     {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if multiagent %}
+  <section>
+    <h2>Multi-agent trajectory &middot; who did what</h2>
+    <p class="note" style="margin:0 0 10px">
+      One recorded orchestrator delegating to a retriever and a writer. Cost and
+      latency are attributed per agent by walking each span to its nearest agent
+      ancestor, so a regression can be traced to the sub-agent that caused it.
+    </p>
+    {% if multiagent.agents %}
+    <table style="max-width:560px">
+      <thead><tr><th>Agent</th><th class="num">LLM calls</th><th class="num">Tool calls</th><th class="num">Latency ms</th><th class="num">Cost $</th></tr></thead>
+      <tbody>
+        {% for a in multiagent.agents %}
+        <tr>
+          <td class="mono">{{ a.agent }}</td>
+          <td class="num">{{ a.llm_calls }}</td>
+          <td class="num">{{ a.tool_calls }}</td>
+          <td class="num">{{ '%g'|format(a.latency_ms) }}</td>
+          <td class="num">{{ '%.6f'|format(a.cost_usd) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% if multiagent.chart %}
+    <div class="legend"><span class="a">agent</span><span class="l">llm</span><span class="t">tool</span></div>
+    <svg class="waterfall" viewBox="0 0 {{ multiagent.chart.width }} {{ multiagent.chart.height }}" role="img" aria-label="agent trajectory for {{ multiagent.case_id }}">
+      {% for r in multiagent.chart.rows %}
+      <text class="lbl" x="{{ r.label_x }}" y="{{ r.y + 15 }}">{{ r.kind }}:{{ r.name }}</text>
+      <rect class="{{ 'bad' if not r.ok else r.kind }}" x="{{ r.x }}" y="{{ r.bar_y }}" width="{{ r.w }}" height="{{ r.h }}" rx="2"><title>{{ r.kind }}:{{ r.name }} &middot; {{ '%g'|format(r.ms) }}ms</title></rect>
+      <text class="ms" x="{{ r.x + r.w + 4 }}" y="{{ r.y + 15 }}">{{ '%g'|format(r.ms) }}ms</text>
+      {% endfor %}
+    </svg>
+    <div class="k">trajectory for case {{ multiagent.case_id }}</div>
+    {% endif %}
   </section>
   {% endif %}
 
@@ -310,9 +394,9 @@
         {% for ch in c.checks %}
         <div class="ck"><span class="dot {{ 'ok' if ch.passed else 'no' }}"></span><span class="mono">{{ ch.name }}</span><span class="k">{{ ch.detail }}</span></div>
         {% endfor %}
-        {% if c.judge.rationale %}
+        {% if c.judge.state %}
         <div class="k" style="margin-top:8px">judge</div>
-        <div>{{ c.judge.state }} &middot; confidence {{ c.judge.confidence }} &middot; {{ c.judge.rationale }}</div>
+        <div>{{ c.judge.state }} &middot; confidence {{ c.judge.confidence }}{% if c.judge.rationale %} &middot; {{ c.judge.rationale }}{% endif %}</div>
         {% endif %}
         <div class="k" style="margin-top:8px">trace</div>
         {% for s in c.spans %}

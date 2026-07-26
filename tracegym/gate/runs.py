@@ -29,6 +29,34 @@ def run_vectors(conn, run_id: str) -> tuple[dict, dict, float]:
     return scores, invariant, cost
 
 
+def _config_sha(conn, run_id: str) -> str | None:
+    row = conn.execute("SELECT config_sha FROM runs WHERE id = ?", (run_id,)).fetchone()
+    return row["config_sha"] if row else None
+
+
+def _output_hashes(conn, run_id: str) -> dict[str, str]:
+    rows = conn.execute(
+        "SELECT case_id, output_sha FROM results WHERE run_id = ?", (run_id,)
+    ).fetchall()
+    return {r["case_id"]: r["output_sha"] for r in rows}
+
+
+def _churn_cases(conn, candidate_run_id: str, reference_run_id: str) -> list[str]:
+    """Cases whose output changed between two runs that declared the same config.
+
+    Only meaningful when both runs pin a non-null, equal config_sha: that is a
+    promise the replays are identical, so any differing output hash is
+    nondeterministic churn, not a real change. Returns [] unless that holds.
+    """
+    cand_cfg = _config_sha(conn, candidate_run_id)
+    ref_cfg = _config_sha(conn, reference_run_id)
+    if not cand_cfg or cand_cfg != ref_cfg:
+        return []
+    ch = _output_hashes(conn, candidate_run_id)
+    rh = _output_hashes(conn, reference_run_id)
+    return sorted(c for c in ch.keys() & rh.keys() if ch[c] != rh[c])
+
+
 def gate_runs(
     conn,
     candidate_run_id: str,
@@ -39,7 +67,7 @@ def gate_runs(
     """Gate a candidate run against any reference run."""
     cs, ci, cc = run_vectors(conn, candidate_run_id)
     rs, ri, rc = run_vectors(conn, reference_run_id)
-    return gate_verdict(
+    result = gate_verdict(
         cs,
         rs,
         cand_invariant_fails=ci,
@@ -49,6 +77,15 @@ def gate_runs(
         cfg=cfg,
         seed=seed,
     )
+    churn = _churn_cases(conn, candidate_run_id, reference_run_id)
+    if churn:
+        result.churn_cases = churn
+        result.reasons.append(
+            f"{len(churn)} case(s) changed output under an identical config_sha "
+            f"(nondeterministic churn): {', '.join(churn[:5])}"
+        )
+        result.verdict = "BLOCK"
+    return result
 
 
 def promote(conn, name: str, suite_id: str, run_id: str, note: str = "") -> None:

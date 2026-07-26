@@ -59,3 +59,47 @@ def linechart(
         "slots": slots,
         "last": {"x": round(x(n - 1), 1), "y": round(y(values[-1]), 1)},
     }
+
+
+def waterfall(
+    spans: list[dict],
+    *,
+    width: int = 520,
+    row_h: int = 22,
+    pad: int = 6,
+    label_w: int = 150,
+) -> dict | None:
+    """Return SVG geometry for a trajectory waterfall from ordered, depth-tagged spans.
+
+    Each span becomes one row; the bar's x/width map its [start_ns, end_ns] onto the
+    trace's total span, and depth indents the label so nested sub-agents read as a
+    tree. Zero-duration spans still get a minimum-width bar so they stay visible.
+    """
+    if not spans:
+        return None
+    t0 = min(s["start_ns"] for s in spans)
+    t1 = max(s["end_ns"] for s in spans)
+    total = max(t1 - t0, 1)
+    track = width - label_w - pad
+    rows = []
+    for i, s in enumerate(spans):
+        x = label_w + (s["start_ns"] - t0) / total * track
+        w = max((s["end_ns"] - s["start_ns"]) / total * track, 2.0)
+        rows.append(
+            {
+                "y": pad + i * row_h,
+                "bar_y": pad + i * row_h + 3,
+                "x": round(x, 1),
+                "w": round(w, 1),
+                "h": row_h - 8,
+                "label_x": 4 + s.get("depth", 0) * 12,
+                "kind": s["kind"],
+                "name": s["name"],
+                # Duration straight from the span. An agent (grouping) span carries no
+                # latency_ms attribute, so this is the only correct source for it; for
+                # a tool/LLM span it equals the recorded latency by construction.
+                "ms": round((s["end_ns"] - s["start_ns"]) / 1e6, 3),
+                "ok": s.get("status", "OK") == "OK",
+            }
+        )
+    return {"width": width, "height": pad * 2 + len(spans) * row_h, "rows": rows}

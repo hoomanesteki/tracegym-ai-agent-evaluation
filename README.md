@@ -86,27 +86,64 @@ flowchart LR
   model, or a deterministic domain solver. The SQL analyst is graded by execution
   accuracy against a gold query run over the bundled database.
 - **MCP-aware.** MCP tool calls are captured, replayed, and scored like any tool.
-  **Multi-agent-ready** through nested agent spans.
+- **Multi-agent.** Wrap work in `rt.agent(name)` and its tool and LLM spans nest
+  under an agent span, so cost, latency, and tool use are attributed per agent by
+  walking each span to its nearest agent ancestor. The report draws the trajectory
+  as a waterfall, so a regression can be traced to the sub-agent that caused it.
 - **OpenTelemetry-native** and wire-format compatible: emit `gen_ai.*` spans, or
   ingest them from any OTel SDK through the SQLite exporter.
-- **Statistical rigor:** paired-bootstrap significance, Cohen's κ reported with
-  raw agreement and PABAK, and a pre-decided calibration ladder that demotes the
-  judge to advisory rather than fake a number.
+- **Statistical rigor:** paired-bootstrap significance, an exact sign test for a
+  consistent pass/fail flip, Cohen's κ reported with raw agreement and PABAK, and a
+  pre-decided calibration ladder that demotes the judge to advisory rather than
+  fake a number.
+
+## Monitor, control, optimize
+
+The gate is the automated tier: it blocks only a high-confidence regression (a new
+invariant failure, a mean drop whose bootstrap CI stays below zero, a one-directional
+pass/fail flip, a cost jump past the hard limit, or nondeterministic churn where the
+output changed under an identical config). Softer signals do not block a merge; they
+route to a **human-notify** tier instead.
+
+- **A `WARN` verdict** for a mean dip whose CI still crosses zero or a cost rise in
+  the soft band. In CI it annotates rather than fails the check.
+- **A review queue** (`tg review`) for the cases the judge was unsure about and the
+  gate warnings. Resolving a judge-review item with a label writes it to the
+  calibration set, so a human decision tightens the gate next time.
+- **Drift detection** (`tg trend --check`) runs EWMA and CUSUM control charts over
+  the run history to catch a slow slide the pairwise gate cannot see, tells an
+  ongoing drift apart from a recovered excursion, and reports the change point.
 
 ## Use it on your own agent
+
+Capture your agent's LLM and tool calls once through the recording proxy:
 
 ```bash
 uv add "git+https://github.com/hoomanesteki/tracegym-ai-agent-evaluation"
 tg record --proxy --port 8080     # point your agent's base_url here, run it once
-tg gate --vs baseline             # exit 1 on a regression, wire into CI
-tg advise                         # validated cheaper/faster suggestions
-tg report                         # open the HTML report
 ```
 
-The command is `tg` (or its alias `tracegym`).
+From there the harness is a small library. Turn the recording into a golden
+suite, replay it deterministically, and gate it against a promoted baseline:
 
-The CI recipe is [.github/workflows/eval-gate.yml](.github/workflows/eval-gate.yml):
-it replays the suites and blocks the merge with **no secrets configured**.
+```python
+from tracegym.store import connect
+from tracegym.replay import run_suite
+from tracegym.gate import gate_against_baseline, promote
+
+conn = connect("traces.db")
+run = run_suite(conn, "blobs", suite_id="my-agent", cases=cases, agent=my_agent, mode="frozen")
+promote(conn, "baseline", "my-agent", run)  # the first good run becomes the reference
+result = gate_against_baseline(conn, run)   # PASS | WARN | BLOCK, deterministic
+```
+
+[.github/workflows/eval-gate.yml](.github/workflows/eval-gate.yml) is the CI recipe
+this repo runs on itself: it replays the suites and blocks the merge with **no
+secrets configured**. Every `tg` command (`gate`, `trend --check`, `review`,
+`advise`, `report`, `profile`, `calibrate`, `cases`, `show`, `diff`) runs against a
+workspace via `--workspace`; with no workspace they drive the bundled demo, so you
+can try each one before wiring your own. The command is `tg` (or its alias
+`tracegym`).
 
 ## The seeded regressions
 
@@ -142,6 +179,12 @@ tg diff sql_delete       # a seeded bug: baseline vs buggy + the check that caug
 - The bundled demo uses deterministic stand-in agents and a local judge so it runs
   at $0. A real Cohen's κ needs your human labels against a live cross-family
   judge. Python only, no hosted UI.
+- The over-time trend and drift charts in the demo run on a short seeded history
+  (labeled illustrative in the report) because `tg demo` rebuilds its workspace
+  each run. On a real project the series grows one frozen run per CI build.
+- The `tg` commands beyond `record` are built around the bundled demo workspace;
+  wiring your own agent into a gated suite is done through the library API above,
+  not yet a one-command CLI flow.
 
 ## Install
 

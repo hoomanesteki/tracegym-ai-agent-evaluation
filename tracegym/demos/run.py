@@ -19,6 +19,7 @@ from tracegym.demos.harness import seeded_bug_recall
 from tracegym.gate import gate_runs
 from tracegym.metrics import suite_scorecard
 from tracegym.replay.loader import load_suite
+from tracegym.review import list_open, populate_from_run
 from tracegym.store import connect
 
 
@@ -130,6 +131,25 @@ def run_demo(workspace: str | Path) -> dict:
             "SELECT COUNT(*) FROM results WHERE judge_state = 'NEEDS_REVIEW'"
         ).fetchone()[0]
 
+        # Human-notify tier: fold any real needs_review/gate-warn signals from this
+        # run into the queue seeded at build time, then read it back for the report.
+        populate_from_run(conn, buggy_run, gate_demo)
+        review = list_open(conn)
+
+        # Multi-agent: per-agent cost/latency and the trajectory of one recorded
+        # orchestrator -> (retriever, writer) run.
+        from tracegym.inspection import trajectory
+        from tracegym.metrics import agent_breakdown
+
+        ma = manifest.get("multiagent")
+        multiagent = None
+        if ma:
+            multiagent = {
+                "case_id": ma["case_id"],
+                "agents": agent_breakdown(conn, ma["run"]),
+                "trajectory": trajectory(conn, f"{ma['run']}-{ma['case_id']}"),
+            }
+
         conn.commit()
         conn.close()
     finally:
@@ -147,6 +167,8 @@ def run_demo(workspace: str | Path) -> dict:
         "case_details": case_details,
         "regression_gallery": regression_gallery,
         "history": history,
+        "review": review,
+        "multiagent": multiagent,
         "gate_demo": {
             "bug": bug["id"],
             "verdict": gate_demo.verdict,

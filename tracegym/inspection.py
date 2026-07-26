@@ -17,7 +17,7 @@ from tracegym.store.blobs import get
 
 def _spans(conn, trace_id: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT kind, name, start_ns, end_ns, attributes FROM spans "
+        "SELECT id, parent_id, kind, name, status, start_ns, end_ns, attributes FROM spans "
         "WHERE trace_id = ? ORDER BY start_ns, id",
         (trace_id,),
     ).fetchall()
@@ -26,8 +26,13 @@ def _spans(conn, trace_id: str) -> list[dict]:
         a = json.loads(r["attributes"] or "{}")
         out.append(
             {
+                "id": r["id"],
+                "parent_id": r["parent_id"],
                 "kind": r["kind"],
                 "name": r["name"],
+                "status": r["status"],
+                "start_ns": int(r["start_ns"] or 0),
+                "end_ns": int(r["end_ns"] or 0),
                 "input_tokens": int(a.get(USAGE_INPUT_TOKENS, 0) or 0),
                 "output_tokens": int(a.get(USAGE_OUTPUT_TOKENS, 0) or 0),
                 "latency_ms": round(float(a.get(LATENCY_MS, 0) or 0), 3),
@@ -35,6 +40,29 @@ def _spans(conn, trace_id: str) -> list[dict]:
             }
         )
     return out
+
+
+def trajectory(conn, trace_id: str) -> list[dict]:
+    """Spans of a trace ordered for a waterfall, each with its nesting depth.
+
+    Depth is the number of ancestor spans (which the internal recorder only ever
+    sets to agent spans), so an orchestrator sits at depth 0 and the tool and LLM
+    spans of the sub-agents it calls sit deeper. Used to draw the multi-agent
+    trajectory; a single-agent trace comes back all at depth 0.
+    """
+    spans = _spans(conn, trace_id)
+    by_id = {s["id"]: s for s in spans}
+    for s in spans:
+        depth = 0
+        pid, guard = s["parent_id"], 0
+        while pid is not None and guard < 64:
+            parent = by_id.get(pid)
+            if parent is None:
+                break
+            depth += 1
+            pid, guard = parent["parent_id"], guard + 1
+        s["depth"] = depth
+    return spans
 
 
 def list_cases(conn, run_id: str) -> list[dict]:
@@ -66,9 +94,12 @@ def case_detail(
         return None
     output = get(blob_root, r["output_sha"])
     checks = json.loads(r["l1_results"] or "[]")
+    # Scope the rationale to this case, not any output that happens to share the
+    # same blob: an identical answer in another case must not leak its rationale.
     rationale = conn.execute(
-        "SELECT rationale FROM judgments WHERE output_sha = ? AND rationale != '' LIMIT 1",
-        (r["output_sha"],),
+        "SELECT rationale FROM judgments WHERE case_id = ? AND output_sha = ? "
+        "AND rationale != '' LIMIT 1",
+        (case_id, r["output_sha"]),
     ).fetchone()
     return {
         "case_id": case_id,

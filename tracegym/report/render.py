@@ -15,7 +15,8 @@ from pathlib import Path
 
 from jinja2 import Environment, select_autoescape
 
-from tracegym.report.charts import linechart
+from tracegym.report.charts import linechart, waterfall
+from tracegym.spc import drift_check
 from tracegym.timeseries import METRICS, delta, metric_series
 
 _TEMPLATE = (
@@ -103,6 +104,27 @@ def _cost_by_model(profile: dict) -> list[dict]:
     ]
 
 
+_SPC_RANK = {"drift": 0, "recovered": 1}
+
+
+def _spc_summary(hist: list[dict]) -> dict | None:
+    """The most notable SPC verdict across a suite's metrics, or None if all quiet."""
+    hits = []
+    for metric, (label, direction) in METRICS.items():
+        r = drift_check(metric_series(hist, metric), direction)
+        if r["status"] in _SPC_RANK:
+            hits.append((r["status"], label, r.get("change_point")))
+    if not hits:
+        return None
+    hits.sort(key=lambda h: _SPC_RANK[h[0]])
+    status, label, cp = hits[0]
+    return {
+        "status": status,
+        "label": label,
+        "shift_run": None if cp is None else cp + 1,
+    }
+
+
 def _trends(history_by_suite: dict) -> dict:
     out = {}
     for sid, hist in (history_by_suite or {}).items():
@@ -128,6 +150,7 @@ def _trends(history_by_suite: dict) -> dict:
             "runs": len(hist),
             "synthetic": hist[0].get("synthetic", False),
             "charts": charts,
+            "spc": _spc_summary(hist),
         }
     return out
 
@@ -138,8 +161,40 @@ def _loop(bundle: dict) -> dict:
         "determinism_pct": bundle.get("determinism", {}).get("pct", 0),
         "gate_verdict": bundle["gate_demo"]["verdict"],
         "needs_review": bundle.get("needs_review", 0),
+        "review_open": len(bundle.get("review", [])),
         "n_safe": sum(1 for r in recs if r.get("status") == "SAFE"),
     }
+
+
+_KIND_LABEL = {
+    "needs_review": "judge review",
+    "gate_warn": "gate warning",
+    "drift": "drift alert",
+}
+
+
+def _multiagent(bundle: dict) -> dict | None:
+    ma = bundle.get("multiagent")
+    if not ma or not ma.get("trajectory"):
+        return None
+    return {
+        "case_id": ma["case_id"],
+        "agents": ma.get("agents", []),
+        "chart": waterfall(ma["trajectory"]),
+    }
+
+
+def _review_view(items: list[dict]) -> list[dict]:
+    return [
+        {
+            "id": it["id"],
+            "kind": _KIND_LABEL.get(it["kind"], it["kind"]),
+            "severity": it.get("severity") or "med",
+            "ref": it.get("ref_id") or "",
+            "reason": it.get("reason") or "",
+        }
+        for it in (items or [])
+    ]
 
 
 def build_context(bundle: dict, title: str) -> dict:
@@ -169,6 +224,8 @@ def build_context(bundle: dict, title: str) -> dict:
         },
         "trends": _trends(bundle.get("history", {})),
         "loop": _loop(bundle),
+        "review": _review_view(bundle.get("review", [])),
+        "multiagent": _multiagent(bundle),
     }
 
 

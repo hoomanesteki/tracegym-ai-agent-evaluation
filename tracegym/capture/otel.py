@@ -31,6 +31,7 @@ USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
 USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
 TOOL_NAME = "gen_ai.tool.name"
 TOOL_CALL_ID = "gen_ai.tool.call.id"
+AGENT_NAME = "gen_ai.agent.name"
 
 # TraceGym-namespaced attributes (cost is not a gen_ai.* field).
 COST_USD = "tracegym.cost_usd"
@@ -80,6 +81,11 @@ def tool_span_attributes(
         INPUT_SHA: input_sha,
         OUTPUT_SHA: output_sha,
     }
+
+
+def agent_span_attributes(*, name: str) -> dict:
+    """Assemble the attribute dict for one agent span (an orchestrator or sub-agent)."""
+    return {KIND: "agent", AGENT_NAME: name, OPERATION_NAME: "invoke_agent"}
 
 
 def record_span(

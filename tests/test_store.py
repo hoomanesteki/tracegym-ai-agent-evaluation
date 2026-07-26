@@ -18,6 +18,7 @@ EXPECTED_TABLES = {
     "labels",
     "baselines",
     "recommendations",
+    "review_queue",
 }
 
 
@@ -36,7 +37,7 @@ def test_same_object_same_sha(tmp_path):
 def test_connect_applies_all_tables():
     conn = connect()
     assert table_names(conn) == EXPECTED_TABLES
-    assert len(EXPECTED_TABLES) == 12
+    assert len(EXPECTED_TABLES) == 13
 
 
 def test_connect_is_idempotent_on_same_file(tmp_path):

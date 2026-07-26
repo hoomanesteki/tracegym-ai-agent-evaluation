@@ -118,6 +118,14 @@ def _with_workspace(workspace: Path):
     return conn, baselines
 
 
+def _baseline_or_exit(baselines: dict, suite: str) -> str:
+    """Return the baseline run id for a suite, or print the options and exit."""
+    if suite not in baselines:
+        console.print(f"Unknown suite {suite!r}. Options: {', '.join(sorted(baselines))}")
+        raise typer.Exit(2)
+    return baselines[suite]
+
+
 @app.command()
 def profile(
     workspace: Path = typer.Option(DEMO_DIR),
@@ -128,7 +136,7 @@ def profile(
     from tracegym.advisor import build_profile
 
     conn, baselines = _with_workspace(workspace)
-    prof = build_profile(conn, baselines[suite])
+    prof = build_profile(conn, _baseline_or_exit(baselines, suite))
     if json_out:
         console.print_json(json.dumps(prof))
         return
@@ -153,7 +161,7 @@ def advise(
     from tracegym.demos import DEMO_ROSTER
 
     conn, baselines = _with_workspace(workspace)
-    recs = run_advise(conn, baselines[suite], roster=DEMO_ROSTER)
+    recs = run_advise(conn, _baseline_or_exit(baselines, suite), roster=DEMO_ROSTER)
     table = Table("rule", "recommendation", "status", "saving")
     for r in recs:
         table.add_row(
@@ -164,12 +172,14 @@ def advise(
 
 @app.command()
 def gate(
-    vs: str = typer.Option("baseline", help="Reference: baseline or a run id."),
+    vs: str = typer.Option(
+        "baseline", help="Reference to gate against: 'baseline' or a specific run id."
+    ),
     workspace: Path = typer.Option(DEMO_DIR),
     suite: str = typer.Option("sql-analyst"),
     bug: str = typer.Option("sql_delete", help="Seeded bug variant to gate (demo)."),
 ) -> None:
-    """Gate a seeded-bug variant against the baseline and exit non-zero on BLOCK."""
+    """Gate a seeded-bug variant against a reference run and exit non-zero on BLOCK."""
     from tracegym.demos.bugs import BUGS, buggy_agent
     from tracegym.demos.harness import agent_and_responder
     from tracegym.gate import gate_runs
@@ -177,9 +187,17 @@ def gate(
     from tracegym.replay.loader import load_suite
 
     conn, baselines = _with_workspace(workspace)
+    reference = _baseline_or_exit(baselines, suite) if vs == "baseline" else vs
+    if conn.execute("SELECT 1 FROM runs WHERE id = ?", (reference,)).fetchone() is None:
+        console.print(f"No such reference run: {reference!r}. Use 'baseline' or a valid run id.")
+        raise typer.Exit(2)
     cases, _ = load_suite(Path("suites") / suite)
     base_agent, responder = agent_and_responder(suite)
-    transform = next(b for b in BUGS if b["id"] == bug)["fn"]
+    spec = next((b for b in BUGS if b["id"] == bug), None)
+    if spec is None:
+        console.print(f"Unknown bug {bug!r}. Options: {', '.join(b['id'] for b in BUGS)}")
+        raise typer.Exit(2)
+    transform = spec["fn"]
     buggy = run_suite(
         conn,
         Path("blobs"),
@@ -189,26 +207,97 @@ def gate(
         mode="frozen",
         responder=responder,
     )
-    result = gate_runs(conn, buggy, baselines[suite])
-    color = "red" if result.blocked else "green"
+    result = gate_runs(conn, buggy, reference)
+    color = {"BLOCK": "red", "WARN": "yellow", "PASS": "green"}[result.verdict]
     console.print(
         Panel(
-            "; ".join(result.reasons) or "no regression",
+            "; ".join(result.reasons or result.warnings) or "no regression",
             title=f"[{color}]{result.verdict}[/{color}]",
             border_style=color,
         )
     )
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        # Tiered annotations: BLOCK reasons fail the check, WARN warnings do not.
+        for reason in result.reasons:
+            print(f"::error title=TraceGym gate::{reason}")
+        for warn in result.warnings:
+            print(f"::warning title=TraceGym gate::{warn}")
     raise typer.Exit(1 if result.blocked else 0)
 
 
 @app.command()
-def calibrate(workspace: Path = typer.Option(DEMO_DIR)) -> None:
+def calibrate(
+    workspace: Path = typer.Option(DEMO_DIR),
+    labeler: str = typer.Option(
+        "canary-gold",
+        help="Whose labels to calibrate against (e.g. reviewer for tg review labels).",
+    ),
+) -> None:
     """Report judge-vs-label agreement (Cohen's kappa) and the gate mode."""
     from tracegym.calibrate import calibrate_from_db
 
     conn, _ = _with_workspace(workspace)
-    rep = calibrate_from_db(conn, labeler="canary-gold", min_labels=1)
+    rep = calibrate_from_db(conn, labeler=labeler, min_labels=1)
     console.print_json(json.dumps(rep))
+
+
+@app.command()
+def review(
+    action: str = typer.Argument("list", help="list | ack | resolve"),
+    item_id: str = typer.Argument(None, help="review item id, for ack/resolve"),
+    workspace: Path = typer.Option(DEMO_DIR),
+    label: str = typer.Option(
+        None, help="pass|fail: records a human label when resolving a needs_review item"
+    ),
+) -> None:
+    """Show or clear the human-notify queue (the control loop's soft, no-block tier)."""
+    from tracegym import review as rq
+
+    conn, _ = _with_workspace(workspace)
+    if action == "list":
+        items = rq.list_open(conn)
+        if not items:
+            console.print("Review queue is empty. Nothing needs a human right now.")
+            raise typer.Exit(0)
+        table = Table("id", "kind", "severity", "ref", "reason")
+        for it in items:
+            table.add_row(
+                it["id"],
+                it["kind"],
+                it.get("severity") or "",
+                it.get("ref_id") or "",
+                it.get("reason") or "",
+            )
+        console.print(table)
+        return
+    if not item_id:
+        console.print("Provide an item id, for example: tg review resolve rv-... --label pass")
+        raise typer.Exit(1)
+    if action == "ack":
+        console.print("Acknowledged." if rq.ack(conn, item_id) else "No such open item.")
+        return
+    if action == "resolve":
+        label_pass = None
+        if label is not None:
+            if label not in ("pass", "fail"):
+                console.print("--label must be pass or fail")
+                raise typer.Exit(1)
+            label_pass = label == "pass"
+        res = rq.resolve(conn, item_id, label_pass=label_pass)
+        if not res:
+            console.print("No such item.")
+        elif res.labeled:
+            console.print(
+                "Resolved and recorded a human label. Fold it into calibration with: "
+                "tg calibrate --labeler reviewer"
+            )
+        elif label_pass is not None:
+            console.print("Resolved. No label recorded: this item has no case output to label.")
+        else:
+            console.print("Resolved.")
+        return
+    console.print(f"Unknown action {action!r}. Use: list | ack | resolve.")
+    raise typer.Exit(1)
 
 
 _SPARK = "▁▂▃▄▅▆▇█"
@@ -231,6 +320,7 @@ def trend(
     metric: str = typer.Option(
         "mean_score", help="mean_score|task_success_rate|cost_usd|p95_latency_ms|invariant_failures"
     ),
+    check: bool = typer.Option(False, "--check", help="Run the SPC drift check on the metric."),
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
     """Show a metric's trend across recent runs (sparkline + per-run delta)."""
@@ -238,17 +328,17 @@ def trend(
 
     conn, _ = _with_workspace(workspace)
     hist = run_history(conn, suite)
+    if metric not in METRICS:
+        console.print(f"Unknown metric. Options: {', '.join(METRICS)}")
+        raise typer.Exit(1)
     if json_out:
         console.print_json(json.dumps({"suite": suite, "metric": metric, "history": hist}))
         return
     if len(hist) < 2:
         console.print(f"Not enough run history for {suite} yet (need 2+ runs).")
         raise typer.Exit(0)
-    if metric not in METRICS:
-        console.print(f"Unknown metric. Options: {', '.join(METRICS)}")
-        raise typer.Exit(1)
     vals = metric_series(hist, metric)
-    label, _dir = METRICS[metric]
+    label, direction = METRICS[metric]
     tag = " (illustrative)" if hist[0].get("synthetic") else ""
     console.print(f"[bold]{suite}[/bold] · {label} · {len(hist)} runs{tag}")
     console.print(f"  {_sparkline(vals)}  latest={vals[-1]:g}")
@@ -261,6 +351,34 @@ def trend(
         )
         prev = v
     console.print(table)
+    if check:
+        _print_drift(conn, suite, metric, label, vals, direction, hist[0].get("synthetic", False))
+
+
+def _print_drift(conn, suite, metric, label, vals, direction, synthetic) -> None:
+    from tracegym import review as rq
+    from tracegym.spc import drift_check
+
+    r = drift_check(vals, direction)
+    status = r["status"]
+    color = {"drift": "red", "recovered": "yellow"}.get(status, "green")
+    line = f"SPC: [{color}]{status}[/{color}]"
+    if r.get("change_point") is not None and status in ("drift", "recovered"):
+        line += f" · most likely shift at run #{r['change_point'] + 1}"
+    if status == "insufficient":
+        line = f"SPC: need {r['min_samples']}+ runs (have {r['n']})"
+    console.print(line)
+    if status == "drift" and not synthetic:
+        # Ongoing drift is a human-notify signal: route it to the review queue.
+        rq.enqueue(
+            conn,
+            run_id=None,
+            kind="drift",
+            ref_id=f"{suite}:{metric}",
+            reason=f"{label} drifting on {suite} (shift near run #{(r['change_point'] or 0) + 1})",
+            severity="med",
+        )
+        console.print("  routed to the review queue (tg review)")
 
 
 @app.command()
@@ -272,7 +390,7 @@ def cases(
     from tracegym.inspection import list_cases
 
     conn, baselines = _with_workspace(workspace)
-    rows = list_cases(conn, baselines[suite])
+    rows = list_cases(conn, _baseline_or_exit(baselines, suite))
     table = Table("case", "score", "judge", "invariant fails")
     for r in rows:
         table.add_row(
@@ -285,7 +403,7 @@ def cases(
 def show(
     case_id: str = typer.Argument(..., help="Case id, e.g. sql-001 or sr-003."),
     workspace: Path = typer.Option(DEMO_DIR),
-    suite: str = typer.Option("sql-analyst"),
+    suite: str = typer.Option("", help="Limit to one suite; by default every suite is searched."),
 ) -> None:
     """Show one case in full: input, output, every check, judge, and trace."""
     from tracegym.inspection import case_detail
@@ -293,11 +411,24 @@ def show(
     from tracegym.report.render import render_output
 
     conn, baselines = _with_workspace(workspace)
-    suite_cases, _ = load_suite(Path("suites") / suite)
-    case = next((c for c in suite_cases if c["id"] == case_id), None)
-    d = case_detail(conn, Path("blobs"), baselines[suite], case_id, case)
+    # Search the named suite first, then the rest, so a case id resolves without
+    # the caller having to know which suite owns it.
+    order = ([suite] if suite else []) + [s for s in baselines if s != suite]
+    d = None
+    for s in order:
+        try:
+            suite_cases, _ = load_suite(Path("suites") / s)
+        except FileNotFoundError:
+            continue
+        case = next((c for c in suite_cases if c["id"] == case_id), None)
+        if case is None:
+            continue
+        d = case_detail(conn, Path("blobs"), baselines[s], case_id, case)
+        if d is not None:
+            break
     if d is None:
-        console.print(f"No case '{case_id}' in suite '{suite}'.")
+        where = f"suite '{suite}'" if suite else "any suite"
+        console.print(f"No case '{case_id}' in {where}.")
         raise typer.Exit(1)
 
     console.print(
