@@ -48,7 +48,8 @@ def test_mean_drop_with_wide_ci_does_not_block():
     r = gate_verdict(cand, base, cfg=CFG)
     assert r.mean_delta < -0.15
     assert r.ci_high > 0  # CI includes zero
-    assert r.verdict == "PASS"
+    assert r.verdict == "WARN"  # soft signal for a human, but not a merge block
+    assert not r.blocked
 
 
 def test_single_case_drop_does_not_block_on_ci():
@@ -56,6 +57,17 @@ def test_single_case_drop_does_not_block_on_ci():
     r = gate_verdict(_scores([("c1", 0.0)]), _scores([("c1", 1.0)]), cfg=CFG)
     assert r.verdict == "PASS"
     assert r.mean_delta == -1.0
+
+
+def test_flip_test_blocks_when_the_mean_barely_moves():
+    # 5 cases dip just below the pass threshold; the mean barely moves, but a
+    # consistent one-directional flip is caught by the exact sign test.
+    cand = _scores([(f"c{i}", 0.99) for i in range(5)] + [(f"d{i}", 1.0) for i in range(5)])
+    base = _scores([(f"c{i}", 1.0) for i in range(5)] + [(f"d{i}", 1.0) for i in range(5)])
+    r = gate_verdict(cand, base, cfg=CFG)
+    assert r.blocked
+    assert r.flips == (5, 0)
+    assert r.mean_delta > -0.15  # mean-delta alone would not have blocked
 
 
 def test_cost_regression_blocks():
@@ -96,3 +108,38 @@ def test_gate_against_promoted_baseline_via_db(tmp_path):
     # The bad agent fails its only check, so the score drops from 1.0 to 0.0.
     assert result.blocked
     assert gate_runs(conn, good, good, cfg=CFG).verdict == "PASS"
+
+
+def _mk_run(conn, run_id, config_sha, outputs):
+    conn.execute(
+        "INSERT INTO runs (id, suite_id, mode, config_sha, created_at) VALUES (?,?,?,?,?)",
+        (run_id, "s", "frozen", config_sha, "2026-01-01"),
+    )
+    for cid, sha in outputs.items():
+        conn.execute(
+            "INSERT INTO results (id, run_id, case_id, output_sha, score, created_at) "
+            "VALUES (?,?,?,?,1.0,'2026-01-01')",
+            (f"{run_id}-{cid}", run_id, cid, sha),
+        )
+    conn.commit()
+
+
+def test_identical_config_but_changed_output_blocks_as_churn():
+    # Same pinned config_sha promises identical replays; a changed output hash is
+    # nondeterministic churn and must block even though every score is a perfect 1.0.
+    conn = connect()
+    _mk_run(conn, "ref", "cfg-abc", {"c1": "h1", "c2": "h2"})
+    _mk_run(conn, "cand", "cfg-abc", {"c1": "h1", "c2": "DIFFERENT"})
+    r = gate_runs(conn, "cand", "ref", cfg=CFG)
+    assert r.blocked
+    assert r.churn_cases == ["c2"]
+
+
+def test_null_config_sha_never_triggers_churn():
+    # The demo pins no config_sha, so a legitimate content change must not be
+    # mistaken for churn (guard requires both config_shas non-null and equal).
+    conn = connect()
+    _mk_run(conn, "ref", None, {"c1": "h1"})
+    _mk_run(conn, "cand", None, {"c1": "DIFFERENT"})
+    r = gate_runs(conn, "cand", "ref", cfg=CFG)
+    assert r.churn_cases == []

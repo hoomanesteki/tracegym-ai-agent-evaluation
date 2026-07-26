@@ -31,6 +31,15 @@ class GateConfig:
     # it the bootstrap has no power (a single case gives a degenerate zero-width CI),
     # so only the invariant and cost signals can block.
     min_cases_for_ci: int = 3
+    # A case "passes" for the flip test at or above this score. b pass->fail flips
+    # with an exact one-sided binomial tail below flip_alpha auto-block, catching a
+    # success-rate regression the mean-delta CI can miss on bimodal scores.
+    success_threshold: float = 1.0
+    flip_min_b: int = 3
+    flip_alpha: float = 0.05
+    block_on_flip_test: bool = True
+    # A cost rise above this soft percent (but under cost_regression_pct) WARNs.
+    soft_cost_pct: float = 25.0
 
 
 @dataclass(frozen=True)
