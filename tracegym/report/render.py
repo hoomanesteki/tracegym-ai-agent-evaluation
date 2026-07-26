@@ -16,6 +16,7 @@ from pathlib import Path
 from jinja2 import Environment, select_autoescape
 
 from tracegym.report.charts import linechart
+from tracegym.spc import drift_check
 from tracegym.timeseries import METRICS, delta, metric_series
 
 _TEMPLATE = (
@@ -103,6 +104,27 @@ def _cost_by_model(profile: dict) -> list[dict]:
     ]
 
 
+_SPC_RANK = {"drift": 0, "recovered": 1}
+
+
+def _spc_summary(hist: list[dict]) -> dict | None:
+    """The most notable SPC verdict across a suite's metrics, or None if all quiet."""
+    hits = []
+    for metric, (label, direction) in METRICS.items():
+        r = drift_check(metric_series(hist, metric), direction)
+        if r["status"] in _SPC_RANK:
+            hits.append((r["status"], label, r.get("change_point")))
+    if not hits:
+        return None
+    hits.sort(key=lambda h: _SPC_RANK[h[0]])
+    status, label, cp = hits[0]
+    return {
+        "status": status,
+        "label": label,
+        "shift_run": None if cp is None else cp + 1,
+    }
+
+
 def _trends(history_by_suite: dict) -> dict:
     out = {}
     for sid, hist in (history_by_suite or {}).items():
@@ -128,6 +150,7 @@ def _trends(history_by_suite: dict) -> dict:
             "runs": len(hist),
             "synthetic": hist[0].get("synthetic", False),
             "charts": charts,
+            "spc": _spc_summary(hist),
         }
     return out
 

@@ -289,6 +289,7 @@ def trend(
     metric: str = typer.Option(
         "mean_score", help="mean_score|task_success_rate|cost_usd|p95_latency_ms|invariant_failures"
     ),
+    check: bool = typer.Option(False, "--check", help="Run the SPC drift check on the metric."),
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
     """Show a metric's trend across recent runs (sparkline + per-run delta)."""
@@ -296,17 +297,17 @@ def trend(
 
     conn, _ = _with_workspace(workspace)
     hist = run_history(conn, suite)
+    if metric not in METRICS:
+        console.print(f"Unknown metric. Options: {', '.join(METRICS)}")
+        raise typer.Exit(1)
     if json_out:
         console.print_json(json.dumps({"suite": suite, "metric": metric, "history": hist}))
         return
     if len(hist) < 2:
         console.print(f"Not enough run history for {suite} yet (need 2+ runs).")
         raise typer.Exit(0)
-    if metric not in METRICS:
-        console.print(f"Unknown metric. Options: {', '.join(METRICS)}")
-        raise typer.Exit(1)
     vals = metric_series(hist, metric)
-    label, _dir = METRICS[metric]
+    label, direction = METRICS[metric]
     tag = " (illustrative)" if hist[0].get("synthetic") else ""
     console.print(f"[bold]{suite}[/bold] · {label} · {len(hist)} runs{tag}")
     console.print(f"  {_sparkline(vals)}  latest={vals[-1]:g}")
@@ -319,6 +320,34 @@ def trend(
         )
         prev = v
     console.print(table)
+    if check:
+        _print_drift(conn, suite, metric, label, vals, direction, hist[0].get("synthetic", False))
+
+
+def _print_drift(conn, suite, metric, label, vals, direction, synthetic) -> None:
+    from tracegym import review as rq
+    from tracegym.spc import drift_check
+
+    r = drift_check(vals, direction)
+    status = r["status"]
+    color = {"drift": "red", "recovered": "yellow"}.get(status, "green")
+    line = f"SPC: [{color}]{status}[/{color}]"
+    if r.get("change_point") is not None and status in ("drift", "recovered"):
+        line += f" · most likely shift at run #{r['change_point'] + 1}"
+    if status == "insufficient":
+        line = f"SPC: need {r['min_samples']}+ runs (have {r['n']})"
+    console.print(line)
+    if status == "drift" and not synthetic:
+        # Ongoing drift is a human-notify signal: route it to the review queue.
+        rq.enqueue(
+            conn,
+            run_id=None,
+            kind="drift",
+            ref_id=f"{suite}:{metric}",
+            reason=f"{label} drifting on {suite} (shift near run #{(r['change_point'] or 0) + 1})",
+            severity="med",
+        )
+        console.print("  routed to the review queue (tg review)")
 
 
 @app.command()

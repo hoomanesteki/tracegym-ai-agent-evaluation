@@ -166,7 +166,13 @@
     <h2>Performance over time</h2>
     {% for suite, t in trends.items() %}
     <div class="row" style="margin:6px 0 12px">
-      <div><strong>{{ suite }}</strong> <span class="k">&middot; {{ t.runs }} runs</span></div>
+      <div>
+        <strong>{{ suite }}</strong> <span class="k">&middot; {{ t.runs }} runs</span>
+        {% if t.spc %}
+          {% if t.spc.status == 'drift' %}<span class="chip WARN">drift: {{ t.spc.label }}{% if t.spc.shift_run %} near run {{ t.spc.shift_run }}{% endif %}</span>
+          {% else %}<span class="chip good">SPC: recovered excursion{% if t.spc.shift_run %} at run {{ t.spc.shift_run }}{% endif %}</span>{% endif %}
+        {% else %}<span class="chip good">SPC: in control</span>{% endif %}
+      </div>
       {% if t.synthetic %}<span class="synthetic-note">illustrative history seeded by the demo</span>{% endif %}
     </div>
     <div class="trend-grid">
